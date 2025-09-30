@@ -10,3 +10,13 @@
 - **`test/`** → Pruebas unitarias con Unity (ejecutables desde PlatformIO).  
 - **`tools/`** → Utilidades o scripts auxiliares.  
 - **`postman_collection.json`** → Conjunto de pruebas de API para Postman.  
+
+Comandos útiles
+
+Compilar: pio run
+
+Subir: pio run -t upload
+
+Monitor serie: pio device monitor
+
+Subir UI a LittleFS: pio run -t uploadfs
