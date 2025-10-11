@@ -8,7 +8,7 @@ from app.db.models import Lectura, Mecanismos, Config
 
 # ----------------- Sesión y utilidad guardar -----------------
 def _with_session():
-    """abrir y cerrar una sesión"""
+    "abrir y cerrar una sesion"
     class _Ctx:
         def __enter__(self):
             self.db = SessionLocal()
@@ -25,7 +25,7 @@ def _with_session():
 
 
 def guardar(db: Session, obj):
-    """Agrega un objeto y hace commit """
+    "agrega un objeto y hace commit "
     db.add(obj)
     db.commit()
     db.refresh(obj)
@@ -66,26 +66,31 @@ def set_config(
 
 
 # ----------------- Mecanismos -----------------
-def get_mecanismos(db: Session) -> Mecanismos:
-    mech = db.query(Mecanismos).first()
-    if not mech:
-        mech = guardar(db, Mecanismos())  # todo False por defecto
-    return mech
+def get_status(db: Session) -> Mecanismos:
+    stat = db.query(Mecanismos).first()
+    if not stat:
+        stat = guardar(db, Mecanismos())  # todo False por defecto
+    return stat
 
 
 def set_mecanismo(
     bomba: Optional[bool] = None,
     lamparita: Optional[bool] = None,
     ventilador: Optional[bool] = None,
+    nivel_agua: Optional[int] = None,
 ) -> Mecanismos:
     with _with_session() as db:
-        mech = get_mecanismos(db)
+        mech = get_status(db)
+
         if bomba is not None:
             mech.bomba = bool(bomba)
         if lamparita is not None:
             mech.lamparita = bool(lamparita)
         if ventilador is not None:
             mech.ventilador = bool(ventilador)
+        if nivel_agua is not None:
+            mech.nivel_agua = int(nivel_agua)
+
         return guardar(db, mech)
 
 
@@ -96,7 +101,7 @@ def agregar_lectura(
     humedad_suelo: float,
     nivel_de_agua: float,
 ) -> Lectura:
-    """Guarda una lectura y la devuelve."""
+    "guarda una lectura y la devuelve"
     with _with_session() as db:
         obj = Lectura(
             temperatura=temperatura,

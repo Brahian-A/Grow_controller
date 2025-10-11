@@ -7,9 +7,11 @@ router = APIRouter(prefix="/config", tags=["config"])
 
 @router.get("", response_model=ConfigOut)
 def get_cfg():
+    "devuelve los umbrales"
     with SessionLocal() as db:
         return get_config(db)
 
 @router.put("", response_model=ConfigOut)
 def put_cfg(payload: ConfigIn):
+    "modifica los umbrales"
     return set_config(**payload.model_dump(exclude_none=True))

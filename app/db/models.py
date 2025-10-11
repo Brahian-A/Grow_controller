@@ -25,6 +25,8 @@ class Mecanismos(Base):
     bomba = Column(Boolean, nullable=False, default=False)
     lamparita = Column(Boolean, nullable=False, default=False)
     ventilador = Column(Boolean, nullable=False, default=False)
+    nivel_agua = Column(Integer, nullable=False, default=0)
+
 
 
 class Config(Base):
@@ -48,3 +50,8 @@ class Evento(Base):
     fecha_hora = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     tipo = Column(String(20), nullable=False)
     subtipo = Column(String(50), nullable=False)
+    detalle = Column(String(50), nullable=False)
+    mensaje = Column(String(50), nullable=False)
+    
+    
+    
