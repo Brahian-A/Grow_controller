@@ -5,7 +5,6 @@ from typing import Optional, List
 from app.db.session import SessionLocal
 from app.db.models import Lectura, Mecanismos, Config
 
-# 👇 NUEVO: importar el puente
 from app.conexiones.conexion_esp32 import obtener_conexion
 
 
@@ -70,17 +69,13 @@ def set_config(
 
 # ----------------- Mecanismos -----------------
 def get_status(db: Session) -> Mecanismos:
-    """
-    Obtiene el estado desde la BD y lo complementa con el snapshot EN VIVO del puente.
-    No escribe en BD para evitar ruido: solo prioriza lo real de la ESP al responder.
-    """
+   
     stat = db.query(Mecanismos).first()
     if not stat:
-        stat = guardar(db, Mecanismos())  # todo False por defecto
+        stat = guardar(db, Mecanismos())
 
-    # 👇 NUEVO: mezclar con snapshot del puente (prioridad al vivo)
     cx = obtener_conexion()
-    snap = cx.snapshot()  # {"bomba":bool,"ventilador":bool,"lamparita":bool,"nivel_agua":int}
+    snap = cx.snapshot()
 
     stat.bomba = snap["bomba"]
     stat.ventilador = snap["ventilador"]
@@ -96,10 +91,7 @@ def set_mecanismo(
     ventilador: Optional[bool] = None,
     nivel_agua: Optional[int] = None,
 ) -> Mecanismos:
-    """
-    Actualiza la BD y, MINIMO E IMPRESCINDIBLE, envía los comandos a la ESP.
-    """
-    # 👇 NUEVO: mandar primero a la ESP (efecto inmediato en el invernadero)
+    
     cx = obtener_conexion()
     if bomba is not None:
         cx.set_bomba(bool(bomba))
@@ -131,7 +123,6 @@ def agregar_lectura(
     humedad_suelo: float,
     nivel_de_agua: float,
 ) -> Lectura:
-    "guarda una lectura y la devuelve"
     with _with_session() as db:
         obj = Lectura(
             temperatura=temperatura,
