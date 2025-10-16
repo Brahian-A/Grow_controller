@@ -1,6 +1,9 @@
 from sqlalchemy import select, desc
 from sqlalchemy.orm import Session
 from typing import Optional, List
+from datetime import datetime, timezone, timedelta
+from zoneinfo import ZoneInfo
+import io, csv
 
 from app.db.session import SessionLocal
 from app.db.models import Lectura, Mecanismos, Config
@@ -149,7 +152,43 @@ def ultima_lectura() -> Optional[Lectura]:
         lecturas = select(Lectura).order_by(desc(Lectura.fecha_hora)).limit(1)
         return db.execute(lecturas).scalars().first()
 
-def ultimas_lecturas(limit: int = 20) -> List[Lectura]:
+def ultimas_lecturas_7d() -> List[Lectura]:
+    "devuelve todas las lecturas dentro de los últimos 7 días (orden desc)"
+    cutoff = datetime.now(timezone.utc) - timedelta(days=7)
     with _with_session() as db:
-        lecturas = select(Lectura).order_by(desc(Lectura.fecha_hora)).limit(limit)
-        return list(db.execute(lecturas).scalars().all())
+        stmt = (
+            select(Lectura)
+            .where(Lectura.fecha_hora >= cutoff)
+            .order_by(desc(Lectura.fecha_hora))
+        )
+        return db.execute(stmt).scalars().all()
+
+def csv_from(days: int) -> str:
+    now_utc = datetime.now(timezone.utc)
+    cutoff = now_utc - timedelta(days=days)
+
+    with _with_session() as db:
+        stmt = (
+            select(
+                Lectura.fecha_hora,
+                Lectura.temperatura,
+                Lectura.humedad_suelo,
+                Lectura.humedad,
+            )
+            .where(Lectura.fecha_hora >= cutoff, Lectura.fecha_hora <= now_utc)
+            .order_by(desc(Lectura.fecha_hora))
+        )
+        rows = db.execute(stmt).all()
+
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(["fecha_hora", "temperatura", "humedad_suelo", "humedad"])
+
+    tz = ZoneInfo("America/Montevideo")
+    for dt, temperatura, humedad_suelo, humedad in rows:
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        dt_local = dt.astimezone(tz).isoformat
+        writer.writerow([dt_local, temperatura,humedad_suelo,humedad])
+
+    return buf.getvalue()
