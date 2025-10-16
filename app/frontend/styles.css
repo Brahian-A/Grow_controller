@@ -1,0 +1,184 @@
+:root {
+  --bg:#0c0d0e;
+  --screen:#eef5ef;
+  --panel:#fff;
+  --border:#e6ebea;
+  --text:#0f172a;
+  --brand:#2f6b31;
+  --brand-600:#2b5f2c;
+  --err:#ef4444;
+  --radius:16px;
+  --space:16px;
+}
+
+* { box-sizing:border-box; }
+html, body { height:100%; margin:0; background:var(--bg); color:var(--text); font-family:Inter, system-ui, sans-serif; }
+
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 12px var(--space);
+  color: #fff;
+  background: radial-gradient(80% 80% at 50% 0%, #3ea447 0%, var(--brand) 60%, var(--brand-600) 100%);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, .18);
+}
+.topbar h2 {
+  margin: 0;
+  font-weight: 800;
+  font-size: 18px;
+}
+#btn-menu {
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  border: 0;
+  background: rgba(255,255,255,.14);
+  color: #fff;
+  font-size: 18px;
+  cursor: pointer;
+}
+.badge {
+  background:#e6f7ea;
+  color:#0f5a1a;
+  border-radius:999px;
+  font-size:12px;
+  font-weight:800;
+  padding:4px 10px;
+}
+
+#sidebar {
+  position:fixed; inset:0 auto 0 0; width:260px; z-index:1000;
+  background:#fff; border-right:1px solid var(--border);
+  transform:translateX(-100%); transition:.2s ease;
+  padding:20px;
+}
+#sidebar h1 { margin:0 0 12px; font-weight:900; }
+#sidebar nav { display:grid; gap:8px; }
+#sidebar nav a {
+  padding:10px 12px;
+  border-radius:12px;
+  font-weight:700;
+  text-decoration:none;
+  color:var(--text);
+  transition:.1s;
+}
+#sidebar nav a:hover { background:#e8f7e9; }
+#sidebar nav a.is-active { background:#dff1e2; }
+body.menu-open #sidebar { transform:none; }
+
+#backdrop {
+  position:fixed; inset:0; background:rgba(0,0,0,.4);
+  opacity:0; pointer-events:none; transition:.15s;
+}
+body.menu-open #backdrop { opacity:1; pointer-events:auto; }
+
+#app { padding:var(--space); background:var(--screen); min-height:100vh; }
+
+.cards { display:grid; gap:14px; }
+.card, .kpi, .a-card {
+  background:var(--panel);
+  border:1px solid var(--border);
+  border-radius:var(--radius);
+  padding:16px;
+}
+.kpi { text-align:center; }
+.kpi .label { color:#24532a; font-weight:700; font-size:13px; }
+.kpi .value { font-size:28px; font-weight:900; }
+
+.actions-grid {
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:12px;
+}
+.a-card {
+  text-align:center;
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+  align-items:center;
+  transition:.15s;
+}
+.a-card img { width:28px; height:28px; opacity:.9; }
+.a-card.active {
+  background:#e8f7e9;
+  border-color:#bfe3c3;
+}
+.big-danger {
+  background:var(--err);
+  color:#fff;
+  border:0;
+  border-radius:12px;
+  padding:12px;
+  font-weight:800;
+  cursor:pointer;
+}
+
+.progress {
+  width:100%;
+  height:12px;
+  border-radius:999px;
+  background:#edf2ef;
+  overflow:hidden;
+}
+.progress__bar {
+  height:100%;
+  width:0%;
+  background:linear-gradient(90deg,#35a342,var(--brand));
+  transition:width .4s ease;
+}
+.agua-meta {
+  margin-top:6px;
+  display:flex;
+  justify-content:space-between;
+  font-size:12px;
+  color:#5e6b66;
+}
+
+.form { display:grid; gap:12px; }
+.form label { font-weight:700; color:#24532a; }
+.form input {
+  padding:10px;
+  border:1px solid #ccc;
+  border-radius:10px;
+  width:100%;
+}
+.form input:focus {
+  outline:2px solid #b6e1bc;
+  border-color:#b6e1bc;
+}
+.btn {
+  background:var(--brand);
+  color:#fff;
+  border:0;
+  border-radius:10px;
+  padding:10px 14px;
+  font-weight:800;
+  cursor:pointer;
+}
+
+.alerts { display:grid; gap:10px; }
+.alert {
+  border:1px solid var(--border);
+  border-radius:14px;
+  padding:12px 14px;
+  background:#fff;
+  box-shadow:0 2px 4px rgba(0,0,0,0.05);
+}
+.alert--ok { border-left:4px solid #2f6b31; }
+.alert--warn { border-left:4px solid #f59e0b; }
+.alert--err { border-left:4px solid #ef4444; }
+.alert-header {
+  display:flex;
+  justify-content:space-between;
+  font-weight:700;
+  font-size:14px;
+  margin-bottom:6px;
+}
+.alert-time { color:#6b7280; font-weight:500; font-size:13px; }
+.alert-status { font-weight:800; }
+.alert-data { font-size:13px; color:#444; }

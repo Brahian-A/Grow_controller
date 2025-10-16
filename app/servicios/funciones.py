@@ -5,6 +5,9 @@ from typing import Optional, List
 from app.db.session import SessionLocal
 from app.db.models import Lectura, Mecanismos, Config
 
+# 👇 NUEVO: importar el puente
+from app.conexiones.conexion_esp32 import obtener_conexion
+
 
 # ----------------- Sesión y utilidad guardar -----------------
 def _with_session():
@@ -67,9 +70,23 @@ def set_config(
 
 # ----------------- Mecanismos -----------------
 def get_status(db: Session) -> Mecanismos:
+    """
+    Obtiene el estado desde la BD y lo complementa con el snapshot EN VIVO del puente.
+    No escribe en BD para evitar ruido: solo prioriza lo real de la ESP al responder.
+    """
     stat = db.query(Mecanismos).first()
     if not stat:
         stat = guardar(db, Mecanismos())  # todo False por defecto
+
+    # 👇 NUEVO: mezclar con snapshot del puente (prioridad al vivo)
+    cx = obtener_conexion()
+    snap = cx.snapshot()  # {"bomba":bool,"ventilador":bool,"lamparita":bool,"nivel_agua":int}
+
+    stat.bomba = snap["bomba"]
+    stat.ventilador = snap["ventilador"]
+    stat.lamparita = snap["lamparita"]
+    stat.nivel_agua = snap["nivel_agua"]
+
     return stat
 
 
@@ -79,6 +96,19 @@ def set_mecanismo(
     ventilador: Optional[bool] = None,
     nivel_agua: Optional[int] = None,
 ) -> Mecanismos:
+    """
+    Actualiza la BD y, MINIMO E IMPRESCINDIBLE, envía los comandos a la ESP.
+    """
+    # 👇 NUEVO: mandar primero a la ESP (efecto inmediato en el invernadero)
+    cx = obtener_conexion()
+    if bomba is not None:
+        cx.set_bomba(bool(bomba))
+    if ventilador is not None:
+        cx.set_ventilador(bool(ventilador))
+    if lamparita is not None:
+        cx.set_lamparita(bool(lamparita))
+
+    # Persistir espejo en BD   tal como ya lo hacías
     with _with_session() as db:
         mech = get_status(db)
 

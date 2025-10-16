@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Greenhouse</title>
+  <link rel="stylesheet" href="./styles.css?v=10" />
+</head>
+<body>
+  <header class="topbar">
+    <button id="btn-menu">☰</button>
+    <h2>Invernadero</h2>
+    <div id="badge-online" class="badge">● Online</div>
+  </header>
+
+  <aside id="sidebar">
+    <h1>Menú</h1>
+    <nav>
+      <a href="#/dashboard">Dashboard</a>
+      <a href="#/history">Historial</a>
+      <a href="#/logs">Alertas</a>
+      <a href="#/actuators">Actuadores</a>
+      <a href="#/config">Config</a>
+    </nav>
+  </aside>
+
+  <div id="backdrop"></div>
+
+  <main id="app"></main>
+
+  <script type="module" src="./main.js?v=10"></script>
+</body>
+</html>
