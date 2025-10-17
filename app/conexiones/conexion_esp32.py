@@ -3,9 +3,9 @@ import json, time, threading, logging
 from typing import Optional, Dict, Any
 from dataclasses import dataclass, field
 
-import serial 
+import serial  
 
-SERIAL_PORT = "/dev/ttyUSB1"
+SERIAL_PORT = "/dev/serial/by-id/usb-Espressif_USB_JTAG_serial_debug_unit_DC:DA:0C:58:08:84-if00"
 BAUD = 115200
 SERIAL_TIMEOUT = 1.0
 RETRY_SEC = 2
