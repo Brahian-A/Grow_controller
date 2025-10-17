@@ -25,7 +25,6 @@ class Mecanismos(Base):
     bomba = Column(Boolean, nullable=False, default=False)
     lamparita = Column(Boolean, nullable=False, default=False)
     ventilador = Column(Boolean, nullable=False, default=False)
-    nivel_agua = Column(Integer, nullable=False, default=0)
 
 
 
