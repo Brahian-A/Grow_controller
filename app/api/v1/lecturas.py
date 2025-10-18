@@ -1,5 +1,8 @@
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Depends, HTTPException
 from typing import List
+from sqlalchemy.orm import Session
+from app.api.deps import get_db
+
 from app.schemas.lecturas import LecturaIn, LecturaOut
 from fastapi.responses import StreamingResponse
 from datetime import datetime
@@ -8,23 +11,26 @@ from app.servicios.funciones import agregar_lectura, ultima_lectura, ultimas_lec
 router = APIRouter(prefix="/lecturas", tags=["lecturas"])
 
 @router.post("", response_model=LecturaOut, status_code=201)
-def post_lectura(payload: LecturaIn):
+def post_lectura(payload: LecturaIn, db: Session = Depends(get_db)):
     "Recibe una lectura nueva desde el sensor"
-    return agregar_lectura(**payload.model_dump())
+    try:
+        return agregar_lectura(db, **payload.model_dump())
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"No se pudo guardar la lectura: {e}")
 
 @router.get("/ultima", response_model=LecturaOut | None)
-def get_ultima():
-    "devuelve la última lectura registrada"
-    return ultima_lectura()
+def get_ultima(db: Session = Depends(get_db)):
+    "Devuelve la última lectura registrada"
+    return ultima_lectura(db)
 
 @router.get("", response_model=List[LecturaOut])
-def get_ultimas():
-    "devuelve las ultimas lecturas (por defecto 20)"
-    return ultimas_lecturas_7d()
+def get_ultimas(db: Session = Depends(get_db)):
+    "Devuelve las últimas lecturas (últimos 7 días)"
+    return ultimas_lecturas_7d(db)
 
 @router.get("/csv")
-def get_csv(days: int = Query(..., ge=1, le=365)):
-    csv_text = csv_from(days)
+def get_csv(days: int = Query(..., ge=1, le=365), db: Session = Depends(get_db)):
+    csv_text = csv_from(db, days)
     filename = f"lecturas_ultimos_{days}_dias_{datetime.now().date().isoformat()}.csv"
     return StreamingResponse(
         iter([csv_text]),
