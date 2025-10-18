@@ -188,7 +188,14 @@ def csv_from(days: int) -> str:
     for dt, temperatura, humedad_suelo, humedad in rows:
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=timezone.utc)
-        dt_local = dt.astimezone(tz).isoformat
-        writer.writerow([dt_local, temperatura,humedad_suelo,humedad])
+        'fecha/hora'
+        dt_local = dt.astimezone(tz).isoformat()
+
+        'formateo con simbolos'
+        temp = f"{temperatura:.1f} °C"
+        hum_suelo = f"{humedad_suelo:.1f} %"
+        hum = f"{humedad:.1f} %"
+
+        writer.writerow([dt_local, temp, hum_suelo, hum])
 
     return buf.getvalue()
