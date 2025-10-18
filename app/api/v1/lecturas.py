@@ -3,6 +3,8 @@ from typing import List
 from app.schemas.lecturas import LecturaIn, LecturaOut
 from fastapi.responses import StreamingResponse
 from datetime import datetime
+from app.api.deps import get_db
+from sqlalchemy.orm import Session
 from app.servicios.funciones import agregar_lectura, ultima_lectura, ultimas_lecturas_7d, csv_from
 
 router = APIRouter(prefix="/lecturas", tags=["lecturas"])
