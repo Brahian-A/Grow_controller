@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Depends, HTTPException, status
 from typing import List
 from app.schemas.lecturas import LecturaIn, LecturaOut
 from fastapi.responses import StreamingResponse
@@ -8,26 +8,35 @@ from app.servicios.funciones import agregar_lectura, ultima_lectura, ultimas_lec
 router = APIRouter(prefix="/lecturas", tags=["lecturas"])
 
 @router.post("", response_model=LecturaOut, status_code=201)
-def post_lectura(payload: LecturaIn):
+def post_lectura(payload: LecturaIn, db: Session = Depends(get_db)):
     "Recibe una lectura nueva desde el sensor"
-    return agregar_lectura(**payload.model_dump())
+    try:
+        return agregar_lectura(**payload.model_dump())
+    except Exception as e:
+        raise HTTPException(status_code=409, detail=f"Lecrura existente: {e}")
 
 @router.get("/ultima", response_model=LecturaOut | None)
-def get_ultima():
+def get_ultima(db: Session = Depends(get_db)):
     "devuelve la última lectura registrada"
-    return ultima_lectura()
+    try:
+        return ultima_lectura()
+    except ItemNotFoundError:
+        raise HTTPException(status_code=404, detail=f"No se pudo encontrar la lectura")
 
 @router.get("", response_model=List[LecturaOut])
-def get_ultimas():
+def get_ultimas(db: Session = Depends(get_db)):
     "devuelve las ultimas lecturas (por defecto 20)"
     return ultimas_lecturas_7d()
 
 @router.get("/csv")
 def get_csv(days: int = Query(..., ge=1, le=365)):
-    csv_text = csv_from(days)
-    filename = f"lecturas_ultimos_{days}_dias_{datetime.now().date().isoformat()}.csv"
-    return StreamingResponse(
-        iter([csv_text]),
-        media_type="text/csv",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'}
-    )
+    try:
+        csv_text = csv_from(days)
+        filename = f"lecturas_ultimos_{days}_dias_{datetime.now().date().isoformat()}.csv"
+        return StreamingResponse(
+            iter([csv_text]),
+            media_type="text/csv",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+        )
+    except Exception as e: 
+        HTTPException(status_code=500, detail="No se pudo generar el CSV: {e}")
