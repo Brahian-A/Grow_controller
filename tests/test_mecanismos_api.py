@@ -25,4 +25,3 @@ def test_cambiar_ventilador_y_restaurar(app_client):
         # restaurar
         r3 = app_client.put("/mecanismos", json={"ventilador": orig["ventilador"]})
         assert r3.status_code == 200
-s
