@@ -13,6 +13,7 @@ IP_WAN=$(hostname -I | awk '{print $1}')
 if [ -z "$IP_WAN" ]; then
     echo "Sin conexión a la red. Iniciando en modo configuración."
 
+    sudo ifconfig wlan0 192.168.4.1 netmask 255.255.255.0
     sudo systemctl start hostapd
     sudo systemctl start dnsmasq
 
