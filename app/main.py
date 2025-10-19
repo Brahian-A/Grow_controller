@@ -51,8 +51,8 @@ def create_app() -> FastAPI:
             try:
                 network_config = (
                     '\nnetwork={\n'
-                    f'    ssid="{ssid}"\n'
-                    f'    psk="{password}"\n'
+                    f'      ssid="{ssid}"\n'
+                    f'      psk="{password}"\n'
                     '}\n'
                 )
                 with open("/etc/wpa_supplicant/wpa_supplicant.conf", "a") as f:
@@ -67,24 +67,15 @@ def create_app() -> FastAPI:
 
     else:
         # lo dejamos por ahora para que todo ande
-        #Cuando metamos migraciones lo quitamos de aca
+        #Cuando metemos migraciones lo quitamos de aca
         Base.metadata.create_all(bind=engine)
 
-        # front principal
-        frontend_dir = Path(__file__).parent / "frontend"
-        app.mount("/", StaticFiles(directory=frontend_dir, html=True), name="frontend")
-        
+        # rutas de la api
         app.include_router(lecturas_router, prefix="/api/v1")
         app.include_router(config_router, prefix="/api/v1")
         app.include_router(mecanismos_router, prefix="/api/v1")
         app.include_router(system_router, prefix="/api/v1")
-
-        # lector esp al arrancar
-        @app.on_event("startup")
-        def _startup():
-            iniciar_lector()
-
-        # health check
+        
         @app.get("/health")
         async def health_check(db: Session = Depends(get_db)):
             try:
@@ -92,6 +83,13 @@ def create_app() -> FastAPI:
                 return {"status": "healthy", "database": "connected"}
             except Exception as e:
                 raise HTTPException(status_code=503, detail=f"Database error: {str(e)}")
+
+        frontend_dir = Path(__file__).parent / "frontend" / "api"
+        app.mount("/", StaticFiles(directory=frontend_dir, html=True), name="frontend")
+        
+        @app.on_event("startup")
+        def _startup():
+            iniciar_lector()
 
     return app
 
