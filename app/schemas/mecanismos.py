@@ -3,7 +3,7 @@ from typing import Optional
 
 class MecanismosIn(BaseModel):
     bomba: Optional[bool] = None
-    lamparita: Optional[bool] = None
+    luz: Optional[bool] = None
     ventilador: Optional[bool] = None
 
 class MecanismosOut(BaseModel):

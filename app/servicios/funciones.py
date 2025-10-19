@@ -8,31 +8,16 @@ import io, csv
 from app.db.session import SessionLocal
 from app.db.models import Lectura, Mecanismos, Config
 
-# ----------------- Sesión y utilidad guardar -----------------
-def _with_session():
-    "abrir y cerrar una sesion"
-    class _Ctx:
-        def __enter__(self):
-            self.db = SessionLocal()
-            return self.db
-        def __exit__(self, exc_type, exc, tb):
-            try:
-                if exc:
-                    self.db.rollback()
-                else:
-                    self.db.commit()
-            finally:
-                self.db.close()
-    return _Ctx()
+# ----------------- db
 
 def guardar(db: Session, obj):
-    "agrega un objeto y hace commit "
+    "agrega un objeto y hace commit"
     db.add(obj)
     db.commit()
     db.refresh(obj)
     return obj
 
-# ----------------- Helper ESP32 (import perezoso y tolerante) -----------------
+# ----------------- helper ESP32
 def _get_esp32_connection():
     "Intenta importar y obtener la conexión a la ESP32 sólo cuando se necesite"
     try:
@@ -48,8 +33,9 @@ def _get_esp32_connection():
         print("[ESP32] no se pudo abrir conexión:", e)
         return None
 
-# ----------------- Configuración -----------------
+# ----------------- configuracion
 def get_config(db: Session) -> Config:
+    # Esta función recibe 'db' de FastAPI y lo usa directamente.
     cfg = db.query(Config).first()
     if not cfg:
         cfg = guardar(db, Config())
@@ -63,23 +49,22 @@ def set_config(db: Session,
     humedad_umbral_alto: Optional[int] = None,
     humedad_umbral_bajo: Optional[int] = None,
 ) -> Config:
-    with _with_session() as db:
-        cfg = get_config(db)
-        if humedad_suelo_umbral_alto is not None:
-            cfg.humedad_suelo_umbral_alto = humedad_suelo_umbral_alto
-        if humedad_suelo_umbral_bajo is not None:
-            cfg.humedad_suelo_umbral_bajo = humedad_suelo_umbral_bajo
-        if temperatura_umbral_alto is not None:
-            cfg.temperatura_umbral_alto = temperatura_umbral_alto
-        if temperatura_umbral_bajo is not None:
-            cfg.temperatura_umbral_bajo = temperatura_umbral_bajo
-        if humedad_umbral_alto is not None:
-            cfg.humedad_umbral_alto = humedad_umbral_alto
-        if humedad_umbral_bajo is not None:
-            cfg.humedad_umbral_bajo = humedad_umbral_bajo
-        return guardar(db, cfg)
+    cfg = get_config(db)
+    if humedad_suelo_umbral_alto is not None:
+        cfg.humedad_suelo_umbral_alto = humedad_suelo_umbral_alto
+    if humedad_suelo_umbral_bajo is not None:
+        cfg.humedad_suelo_umbral_bajo = humedad_suelo_umbral_bajo
+    if temperatura_umbral_alto is not None:
+        cfg.temperatura_umbral_alto = temperatura_umbral_alto
+    if temperatura_umbral_bajo is not None:
+        cfg.temperatura_umbral_bajo = temperatura_umbral_bajo
+    if humedad_umbral_alto is not None:
+        cfg.humedad_umbral_alto = humedad_umbral_alto
+    if humedad_umbral_bajo is not None:
+        cfg.humedad_umbral_bajo = humedad_umbral_bajo
+    return guardar(db, cfg)
 
-# ----------------- Mecanismos -----------------
+# ----------------- mecanismos 
 def get_status(db: Session) -> Mecanismos:
     "Devuelve estado de mecanismos. Si hay ESP32, sincroniza con snapshot();"
     stat = db.query(Mecanismos).first()
@@ -89,6 +74,7 @@ def get_status(db: Session) -> Mecanismos:
     cx = _get_esp32_connection()
     if cx is not None:
         try:
+            
             snap = cx.snapshot()
             if "bomba" in snap:       stat.bomba = bool(snap["bomba"])
             if "ventilador" in snap:  stat.ventilador = bool(snap["ventilador"])
@@ -125,43 +111,55 @@ def set_mecanismo(
 
     return guardar(db, mech)
 
-# ----------------- Lecturas -----------------
+# ----------------- lecturas
 def agregar_lectura(
     temperatura: float,
     humedad: float,
     humedad_suelo: float,
     nivel_de_agua: float,
 ) -> Lectura:
-    with _with_session() as db:
+    """Maneja su propia sesión porque es llamada desde un hilo secundario (ESP32)."""
+    db = SessionLocal()
+    try:
         obj = Lectura(
             temperatura=temperatura,
             humedad=humedad,
             humedad_suelo=humedad_suelo,
             nivel_de_agua=nivel_de_agua, 
         )
-        return guardar(db, obj)
+        db.add(obj)
+        db.commit()
+        db.refresh(obj)
+        return obj
+    except Exception as e:
+        db.rollback()
+        raise e
+    finally:
+        db.close()
 
-def ultima_lectura() -> Optional[Lectura]:
-    with _with_session() as db:
-        lecturas = select(Lectura).order_by(desc(Lectura.fecha_hora)).limit(1)
-        return db.execute(lecturas).scalars().first()
+def ultima_lectura(db: Session) -> Optional[Lectura]:
+    """devuelve la última lectura registrada (recibe 'db' de FastAPI)."""
+    lecturas = select(Lectura).order_by(desc(Lectura.fecha_hora)).limit(1)
+    return db.execute(lecturas).scalars().first()
 
-def ultimas_lecturas_7d() -> List[Lectura]:
+def ultimas_lecturas_7d(db: Session) -> List[Lectura]:
     "devuelve todas las lecturas dentro de los últimos 7 días (orden desc)"
+    # Esta función recibe 'db' de FastAPI y lo usa directamente.
     cutoff = datetime.now(timezone.utc) - timedelta(days=7)
-    with _with_session() as db:
-        stmt = (
-            select(Lectura)
-            .where(Lectura.fecha_hora >= cutoff)
-            .order_by(desc(Lectura.fecha_hora))
-        )
-        return db.execute(stmt).scalars().all()
+    stmt = (
+        select(Lectura)
+        .where(Lectura.fecha_hora >= cutoff)
+        .order_by(desc(Lectura.fecha_hora))
+    )
+    return db.execute(stmt).scalars().all()
 
 def csv_from(days: int) -> str:
+    """Genera un CSV de lecturas. Abre su propia sesión ya que no es un endpoint estándar de CRUD."""
     now_utc = datetime.now(timezone.utc)
     cutoff = now_utc - timedelta(days=days)
 
-    with _with_session() as db:
+    db = SessionLocal() # Usa SessionLocal ya que no depende de FastAPI Depends
+    try:
         stmt = (
             select(
                 Lectura.fecha_hora,
@@ -173,7 +171,9 @@ def csv_from(days: int) -> str:
             .order_by(desc(Lectura.fecha_hora))
         )
         rows = db.execute(stmt).all()
-
+    finally:
+        db.close()
+        
     buf = io.StringIO()
     writer = csv.writer(buf)
     writer.writerow(["fecha_hora", "temperatura", "humedad_suelo", "humedad"])

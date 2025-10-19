@@ -7,6 +7,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from app.api.deps import get_db
 from app.core.config import config # config del venv para depues (base de datos y cors para la api)
 
 APP_MODE = os.getenv("APP_MODE", "NORMAL")
@@ -19,25 +20,12 @@ if APP_MODE == "NORMAL":
     from app.api.v1.mecanismos import router as mecanismos_router
     from app.api.v1.system import router as system_router
 
-    # conexión esp32
     from app.conexiones.conexion_esp32 import iniciar_lector
-
-
-def get_db():
-    if APP_MODE != "NORMAL":
-        yield None
-        return
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
 
 def create_app() -> FastAPI:
     app = FastAPI(title="Greenhouse API")
-
-    # middlewares basicos 
+    # middlewares basicos
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
@@ -85,6 +73,11 @@ def create_app() -> FastAPI:
         # front principal
         frontend_dir = Path(__file__).parent / "frontend"
         app.mount("/", StaticFiles(directory=frontend_dir, html=True), name="frontend")
+        
+        app.include_router(lecturas_router, prefix="/api/v1")
+        app.include_router(config_router, prefix="/api/v1")
+        app.include_router(mecanismos_router, prefix="/api/v1")
+        app.include_router(system_router, prefix="/api/v1")
 
         # lector esp al arrancar
         @app.on_event("startup")
