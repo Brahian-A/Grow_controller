@@ -15,7 +15,7 @@ class Config(BaseSettings):
     cors_allow_methods: list[str] = ["*"]
     cors_allow_headers: list[str] = ["*"]
 
-    # modo en el que arranca la app
+    # app boot mode
     app_mode: str = "NORMAL"
 
     model_config = SettingsConfigDict(env_file=".env", env_nested_delimiter="__")

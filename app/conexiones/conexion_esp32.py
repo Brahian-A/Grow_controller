@@ -14,6 +14,7 @@ DB_PERIOD_SEC = 60
 
 @dataclass
 class Snapshot:
+    "in-memory state mirrored from the ESP32 and persisted timing"
     last_data: Dict[str, Any] = field(default_factory=dict)
     last_data_ts: float = 0.0
     last_saved_ts: float = 0.0
@@ -31,8 +32,9 @@ _write_lock = threading.Lock()
 
 def _on_save_lectura(data: Dict[str, Any]) -> None:
     """
-    Mapea JSON de la ESP a tu modelo Lectura y guarda UNA vez por minuto.
-    JSON esperado desde la ESP (ej):
+    Map ESP JSON payload to the Lectura model and save AT MOST once per minute.
+
+    Expected JSON example from ESP:
       {
         "type":"DATA",
         "raw":3445,
@@ -64,6 +66,7 @@ def _on_save_lectura(data: Dict[str, Any]) -> None:
         logging.exception(f"[ESP32] guardar lectura falló: {e}")
 
 def _open_serial():
+    "try to open the serial port, retrying until available or stopped"
     global _serial
     while not _stop:
         try:
@@ -75,6 +78,7 @@ def _open_serial():
             time.sleep(RETRY_SEC)
 
 def _maybe_save_to_db(data: Dict[str, Any]):
+    "throttle database writes so we persist at most once every DB_PERIOD_SEC seconds"
     now = time.time()
     snap.last_data = data
     snap.last_data_ts = now
@@ -84,6 +88,7 @@ def _maybe_save_to_db(data: Dict[str, Any]):
         snap.last_saved_ts = now
 
 def _reader_loop():
+    "background loop that reads JSON lines from the serial port and updates state"
     global _serial
     buf = ""
     while not _stop:
@@ -124,7 +129,7 @@ def _reader_loop():
             time.sleep(RETRY_SEC)
 
 def iniciar_lector():
-    """Lanza el hilo lector (idempotente). Llamar en startup del servidor."""
+    "start the reader thread (idempotent). Call during server startup"
     global _reader_th, _stop
     if _reader_th and _reader_th.is_alive():
         return
@@ -134,6 +139,7 @@ def iniciar_lector():
     logging.info("[ESP32] Lector iniciado")
 
 def detener_lector():
+    "signal the reader loop to stop and close the serial port if open"
     global _stop, _serial
     _stop = True
     try:
@@ -143,7 +149,7 @@ def detener_lector():
         pass
 
 def enviar_cmd(cmd: dict, wait: float = 0.2):
-    """Envía un JSON por serie a la ESP (para RIEGO/VENT/LUZ/STATUS)."""
+    "send a JSON command over serial to the ESP (for RIEGO/VENT/LUZ/STATUS)"
     line = (json.dumps(cmd) + "\n").encode()
     with _write_lock:
         if not _serial or not _serial.is_open:
@@ -159,6 +165,7 @@ def enviar_cmd(cmd: dict, wait: float = 0.2):
     time.sleep(wait)
 
 def get_snapshot() -> Dict[str, Any]:
+    "return a dictionary containing last sensor data, timestamps, and mechanism states"
     return {
         "last_data": snap.last_data,
         "last_data_ts": snap.last_data_ts,

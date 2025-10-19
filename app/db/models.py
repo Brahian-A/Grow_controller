@@ -13,7 +13,7 @@ class Lectura(Base):
     humedad_suelo = Column(Float, nullable=False)
     nivel_de_agua = Column(Float, nullable=False)
 
-# Índices para consultas recientes
+"index optimized for recent queries"
 Index("index_lecturas_fecha", Lectura.fecha_hora.desc())
 
 

@@ -10,7 +10,7 @@ engine = create_engine(
     pool_pre_ping=True,
 )
 
-# Activar WAL (mejor concurrencia en SQLite)
+"enable WAL (better SQLite concurrency)"
 with engine.connect() as conn:
     conn.execute(text("PRAGMA journal_mode=WAL;"))
     conn.execute(text("PRAGMA synchronous=NORMAL;"))

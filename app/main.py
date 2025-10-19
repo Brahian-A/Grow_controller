@@ -24,8 +24,9 @@ if APP_MODE == "NORMAL":
 
 
 def create_app() -> FastAPI:
+    "application factory: sets up middleware, routes, and optional config mode UI"
     app = FastAPI(title="Greenhouse API")
-    # middlewares basicos
+    # basic middlewares
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
@@ -36,7 +37,7 @@ def create_app() -> FastAPI:
     app.add_middleware(GZipMiddleware, minimum_size=1000)
 
     if APP_MODE == "CONFIGURATION":
-        # mini front de configuración wifi
+        # minimal Wi-Fi configuration front-end
         conf_dir = Path(__file__).parent / "frontend" / "conf_mode"
         app.mount("/", StaticFiles(directory=conf_dir, html=True), name="setup_form")
 
@@ -70,7 +71,7 @@ def create_app() -> FastAPI:
         #Cuando metemos migraciones lo quitamos de aca
         Base.metadata.create_all(bind=engine)
 
-        # rutas de la api
+        # API routes
         app.include_router(lecturas_router, prefix="/api/v1")
         app.include_router(config_router, prefix="/api/v1")
         app.include_router(mecanismos_router, prefix="/api/v1")
@@ -83,6 +84,7 @@ def create_app() -> FastAPI:
 
         @app.get("/health")
         async def health_check(db: Session = Depends(get_db)):
+            "simple DB health check endpoint"
             try:
                 db.execute(text("SELECT 1"))
                 return {"status": "healthy", "database": "connected"}
@@ -94,6 +96,7 @@ def create_app() -> FastAPI:
         
         @app.on_event("startup")
         def _startup():
+            "start background ESP32 serial reader on app startup
             iniciar_lector()
 
     return app

@@ -19,7 +19,7 @@ def get_stat(db: Session = Depends(get_db)):
 
 @router.put("", response_model=MecanismosOut)
 def put_mech(payload: MecanismosIn, db: Session = Depends(get_db)):
-    "modifies the state of the mechanisms, e.g.: fan: on"
+    "modify the state of the mechanisms, Example: fan: on"
     cambios = payload.model_dump(exclude_none=True)
     if not cambios:
         raise HTTPException(status_code=400, detail="Debes enviar al menos un campo para actualizar")
