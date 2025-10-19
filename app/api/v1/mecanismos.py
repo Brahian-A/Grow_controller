@@ -9,7 +9,7 @@ router = APIRouter(prefix="/mecanismos", tags=["mecanismos"])
 
 @router.get("", response_model=MecanismosOut)
 def get_stat(db: Session = Depends(get_db)):
-    "devuelve el estado actual de la bomba, ventilador, luz y nivel de agua"
+    "returns the current status of the pump, fan and light"
     try:
         data = get_status(db)
         return data
@@ -19,7 +19,7 @@ def get_stat(db: Session = Depends(get_db)):
 
 @router.put("", response_model=MecanismosOut)
 def put_mech(payload: MecanismosIn, db: Session = Depends(get_db)):
-    "modifica el estado de los mecanismos ej: ventilador: on"
+    "modifies the state of the mechanisms, e.g.: fan: on"
     cambios = payload.model_dump(exclude_none=True)
     if not cambios:
         raise HTTPException(status_code=400, detail="Debes enviar al menos un campo para actualizar")
