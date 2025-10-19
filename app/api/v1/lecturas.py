@@ -41,4 +41,4 @@ def get_csv(days: int = Query(..., ge=1, le=365)):
             headers={"Content-Disposition": f'attachment; filename="{filename}"'}
         )
     except Exception as e: 
-        HTTPException(status_code=500, detail="No se pudo generar el CSV: {e}")
+        raise HTTPException(status_code=500, detail="No se pudo generar el CSV: {e}")

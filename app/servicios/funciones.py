@@ -55,7 +55,7 @@ def get_config(db: Session) -> Config:
         cfg = guardar(db, Config())
     return cfg
 
-def set_config(
+def set_config(db: Session,
     humedad_suelo_umbral_alto: Optional[int] = None,
     humedad_suelo_umbral_bajo: Optional[int] = None,
     temperatura_umbral_alto: Optional[int] = None,
@@ -89,47 +89,41 @@ def get_status(db: Session) -> Mecanismos:
     cx = _get_esp32_connection()
     if cx is not None:
         try:
-            snap = cx.snapshot()  # debe devolver dict con keys conocidos
-            # Campos esperados del snapshot (ajustá si tu driver usa otros nombres)
+            snap = cx.snapshot()
             if "bomba" in snap:       stat.bomba = bool(snap["bomba"])
             if "ventilador" in snap:  stat.ventilador = bool(snap["ventilador"])
-            if "lamparita" in snap:   stat.lamparita = bool(snap["lamparita"])
-            if "nivel_agua" in snap:  stat.nivel_agua = int(snap["nivel_agua"])
-            # Persistimos espejo en BD para que el front vea el estado
+            if "luz" in snap:         stat.luz = bool(snap["luz"])
             stat = guardar(db, stat)
         except Exception as e:
             print("[ESP32] snapshot falló:", e)
-            # devolvemos lo que tengamos en BD
+            # devolvemos lo que tengamos en db
 
     return stat
 
 def set_mecanismo(
+    db: Session,
     bomba: Optional[bool] = None,
-    lamparita: Optional[bool] = None,
+    luz: Optional[bool] = None,
     ventilador: Optional[bool] = None,
-    nivel_agua: Optional[int] = None,
 ) -> Mecanismos:
-    "Intenta mandar el cambio a la ESP32 si está disponible"
     cx = _get_esp32_connection()
     if cx is not None:
         try:
             if bomba is not None:      cx.set_bomba(bool(bomba))
             if ventilador is not None: cx.set_ventilador(bool(ventilador))
-            if lamparita is not None:  cx.set_lamparita(bool(lamparita))
+            if luz is not None:        cx.set_luz(bool(luz))
         except Exception as e:
-            print("[ESP32] set_mecanismo falló", e)
+            print("[ESP32] set_mecanismo fallo", e)
 
-    with _with_session() as db:
-        mech = db.query(Mecanismos).first()
-        if not mech:
-            mech = Mecanismos()
+    mech = db.query(Mecanismos).first()
+    if not mech:
+        mech = Mecanismos()
 
-        if bomba is not None:      mech.bomba = bool(bomba)
-        if lamparita is not None:  mech.lamparita = bool(lamparita)
-        if ventilador is not None: mech.ventilador = bool(ventilador)
-        if nivel_agua is not None: mech.nivel_agua = int(nivel_agua)
+    if bomba is not None:      mech.bomba = bool(bomba)
+    if luz is not None:        mech.luz = bool(luz)
+    if ventilador is not None: mech.ventilador = bool(ventilador)
 
-        return guardar(db, mech)
+    return guardar(db, mech)
 
 # ----------------- Lecturas -----------------
 def agregar_lectura(

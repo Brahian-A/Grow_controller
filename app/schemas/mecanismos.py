@@ -9,9 +9,8 @@ class MecanismosIn(BaseModel):
 class MecanismosOut(BaseModel):
     id: int
     bomba: bool
-    lamparita: bool
+    luz: bool
     ventilador: bool
-    alerta_agua: bool = False
 
     class Config:
         from_attributes = True

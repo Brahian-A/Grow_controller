@@ -23,7 +23,7 @@ class Mecanismos(Base):
     id = Column(Integer, primary_key=True, index=True)
     
     bomba = Column(Boolean, nullable=False, default=False)
-    lamparita = Column(Boolean, nullable=False, default=False)
+    luz = Column(Boolean, nullable=False, default=False)
     ventilador = Column(Boolean, nullable=False, default=False)
 
 

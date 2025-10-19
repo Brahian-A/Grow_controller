@@ -29,3 +29,4 @@ def put_mech(payload: MecanismosIn, db: Session = Depends(get_db)):
     except Exception as e:
         print(f"[ERROR] No se pudo actualizar mecanismos: {e}")
         raise HTTPException(status_code=500, detail="No se pudo actualizar los mecanismos")
+
