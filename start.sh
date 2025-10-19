@@ -2,7 +2,7 @@
 
 # Esperamos 5 segundos a que conecte a la red
 #Wait for 5 seconds to stablish network connection
-sleep 5
+sleep 10
 
 #Obtenemos la IP de la WAN
 #Obtain the WAN IP
