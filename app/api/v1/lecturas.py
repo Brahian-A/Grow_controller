@@ -12,7 +12,7 @@ router = APIRouter(prefix="/lecturas", tags=["lecturas"])
 
 @router.post("", response_model=LecturaOut, status_code=201)
 def post_lectura(payload: LecturaIn, db: Session = Depends(get_db)):
-    "Recibe una lectura nueva desde el sensor"
+    "Receives a new reading from the sensor"
     try:
         return agregar_lectura(**payload.model_dump())
     except Exception as e:
@@ -20,7 +20,7 @@ def post_lectura(payload: LecturaIn, db: Session = Depends(get_db)):
 
 @router.get("/ultima", response_model=LecturaOut | None)
 def get_ultima(db: Session = Depends(get_db)):
-    "devuelve la última lectura registrada"
+    "returns the last recorded reading"
     try:
         return ultima_lectura(db)
     except Exception: 
