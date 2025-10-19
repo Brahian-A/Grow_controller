@@ -76,6 +76,11 @@ def create_app() -> FastAPI:
         app.include_router(mecanismos_router, prefix="/api/v1")
         app.include_router(system_router, prefix="/api/v1")
         
+        app.include_router(lecturas_router,  prefix="")
+        app.include_router(config_router,    prefix="")
+        app.include_router(mecanismos_router, prefix="")
+
+
         @app.get("/health")
         async def health_check(db: Session = Depends(get_db)):
             try:
