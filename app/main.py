@@ -89,7 +89,7 @@ def create_app() -> FastAPI:
             except Exception as e:
                 raise HTTPException(status_code=503, detail=f"Database error: {str(e)}")
 
-        frontend_dir = Path(__file__).parent / "frontend" / "api"
+        frontend_dir = Path(__file__).parent / "frontend"
         app.mount("/", StaticFiles(directory=frontend_dir, html=True), name="frontend")
         
         @app.on_event("startup")
