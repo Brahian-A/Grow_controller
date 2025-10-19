@@ -40,7 +40,7 @@
 
             button.disabled = true;
             button.textContent = 'Guardando...';
-            messageDiv.textContent = 'Enviando credenciales... La Pi se reiniciará en breve.';
+            messageDiv.textContent = 'Enviando credenciales... reiniciando en breve.';
             
             try {
                 const response = await fetch('/api/setup/wifi', {
@@ -55,7 +55,7 @@
                 }
                 
                 messageDiv.style.color = '#2f6b31';
-                messageDiv.textContent = '¡Éxito! La Raspberry Pi se está reiniciando para conectarse a tu red.';
+                messageDiv.textContent = '¡Éxito! La el invernadero se está reiniciando para conectarse a tu red.';
 
             } catch (error) {
                 button.disabled = false;
