@@ -61,7 +61,7 @@ export default function ActuatorsView(container){
 
   function paintStates(){
     if (!mech) return;
-    cardLuces.classList.toggle("active", !!mech.lamparita);
+    cardLuces.classList.toggle("active", !!mech.luz);
     cardVent.classList.toggle("active",  !!mech.ventilador);
     cardRiego.classList.toggle("active", !!mech.bomba);
   }
@@ -88,35 +88,38 @@ export default function ActuatorsView(container){
   }
 
   async function toggle(field){
-    if (!mech || busy) return;
-    busy = true;
-    try{
-      const payload = { ...mech, [field]: !mech[field] };
-      mech = await putMech(payload);
-      paintStates(); 
-    }catch(e){
-      console.warn("toggle error", field, e);
-    }finally{
-      busy = false;
-    }
+  if (!mech || busy) return;
+  busy = true;
+  try{
+    const payload = { [field]: !mech[field] };
+    const updated = await putMech(payload);
+    mech = { ...mech, ...updated };
+    paintStates();
+  }catch(e){
+    console.warn("toggle error", field, e);
+  }finally{
+    busy = false;
   }
+}
 
-  async function stopAll(){
-    if (!mech || busy) return;
-    busy = true;
-    try{
-      const payload = { ...mech, bomba:false, lamparita:false, ventilador:false };
-      mech = await putMech(payload);
-      paintStates();
-    }catch(e){
-      console.warn("stopAll error", e);
-    }finally{
-      busy = false;
-    }
+async function stopAll(){
+  if (!mech || busy) return;
+  busy = true;
+  try{
+    const payload = { bomba:false, luz:false, ventilador:false };
+    const updated = await putMech(payload);
+    mech = { ...mech, ...updated };
+    paintStates();
+  }catch(e){
+    console.warn("stopAll error", e);
+  }finally{
+    busy = false;
   }
+}
+
 
   wrap.addEventListener("click", (e)=>{
-    if (e.target.closest("#card-luces")) toggle("lamparita");
+    if (e.target.closest("#card-luces")) toggle("luz");
     else if (e.target.closest("#card-vent"))  toggle("ventilador");
     else if (e.target.closest("#card-riego")) toggle("bomba");
     else if (e.target.closest("#btn-stop"))   stopAll();
