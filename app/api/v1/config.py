@@ -9,7 +9,7 @@ router = APIRouter(prefix="/config", tags=["config"])
 
 @router.get("", response_model=ConfigOut)
 def get_cfg(db: Session = Depends(get_db)):
-    "devuelve los umbrales"
+    "return the thresholds"
     try:
         return get_config(db)
     except Exception as e:
@@ -18,7 +18,7 @@ def get_cfg(db: Session = Depends(get_db)):
 
 @router.put("", response_model=ConfigOut)
 def put_cfg(payload: ConfigIn, db: Session = Depends(get_db)):
-    "modifica los umbrales"
+    "modify the thresholds"
     data = payload.model_dump(exclude_none=True)
     if not data:
         raise HTTPException(status_code=400, detail="Debes enviar al menos un campo para modificar")
