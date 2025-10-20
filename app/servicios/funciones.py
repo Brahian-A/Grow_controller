@@ -6,9 +6,9 @@ from zoneinfo import ZoneInfo
 import io, csv
 
 from app.db.session import SessionLocal
-from app.db.models import Lectura, Mecanismos, Config
+from app.db.models import Dispositivo, Lectura, Mecanismos, Config
 
-# ----------------- db
+# ----------------- util db
 
 def guardar(db: Session, obj):
     "agrega un objeto y hace commit"
@@ -17,64 +17,72 @@ def guardar(db: Session, obj):
     db.refresh(obj)
     return obj
 
-# ----------------- helper ESP32
+# ----------------- helper: resolver o crear dispositivo
+
+def get_or_create_device(db: Session, esp_id: str, nombre: Optional[str] = None) -> Dispositivo:
+    d = db.query(Dispositivo).filter(Dispositivo.esp_id == esp_id).first()
+    if not d:
+        d = Dispositivo(esp_id=esp_id, nombre=nombre)
+        db.add(d); db.commit(); db.refresh(d)
+        db.add(Mecanismos(device_id=d.id))
+        db.add(Config(device_id=d.id))
+        db.commit(); db.refresh(d)
+    return d
+
+# ----------------- helper ESP32 (opcional)
+
 def _get_esp32_connection():
     "Intenta importar y obtener la conexión a la ESP32 sólo cuando se necesite"
     try:
         from app.conexiones.conexion_esp32 import obtener_conexion
     except Exception as e:
-        # No rompas el server por esto
         print("[ESP32] módulo no disponible:", e)
         return None
-
     try:
         return obtener_conexion()
     except Exception as e:
         print("[ESP32] no se pudo abrir conexión:", e)
         return None
 
-# ----------------- configuracion
-def get_config(db: Session) -> Config:
-    # Esta función recibe 'db' de FastAPI y lo usa directamente.
-    cfg = db.query(Config).first()
+# ----------------- configuración (ahora por dispositivo)
+
+def get_config(db: Session, esp_id: str) -> Config:
+    d = get_or_create_device(db, esp_id)
+    cfg = db.query(Config).filter(Config.device_id == d.id).first()
     if not cfg:
-        cfg = guardar(db, Config())
+        cfg = guardar(db, Config(device_id=d.id))
     return cfg
 
-def set_config(db: Session,
-    humedad_suelo_umbral_alto: Optional[int] = None,
-    humedad_suelo_umbral_bajo: Optional[int] = None,
-    temperatura_umbral_alto: Optional[int] = None,
-    temperatura_umbral_bajo: Optional[int] = None,
-    humedad_umbral_alto: Optional[int] = None,
-    humedad_umbral_bajo: Optional[int] = None,
+def set_config(
+    db: Session,
+    esp_id: str,
+    humedad_suelo: Optional[int] = None,
+    temperatura: Optional[int] = None,
+    humedad_ambiente: Optional[int] = None,
+    margen: Optional[int] = None
 ) -> Config:
-    cfg = get_config(db)
-    if humedad_suelo_umbral_alto is not None:
-        cfg.humedad_suelo_umbral_alto = humedad_suelo_umbral_alto
-    if humedad_suelo_umbral_bajo is not None:
-        cfg.humedad_suelo_umbral_bajo = humedad_suelo_umbral_bajo
-    if temperatura_umbral_alto is not None:
-        cfg.temperatura_umbral_alto = temperatura_umbral_alto
-    if temperatura_umbral_bajo is not None:
-        cfg.temperatura_umbral_bajo = temperatura_umbral_bajo
-    if humedad_umbral_alto is not None:
-        cfg.humedad_umbral_alto = humedad_umbral_alto
-    if humedad_umbral_bajo is not None:
-        cfg.humedad_umbral_bajo = humedad_umbral_bajo
+    cfg = get_config(db, esp_id)
+    if humedad_suelo is not None:
+        cfg.humedad_suelo = humedad_suelo
+    if temperatura is not None:
+        cfg.temperatura = temperatura
+    if humedad_ambiente is not None:
+        cfg.humedad_ambiente = humedad_ambiente
+    if margen is not None:
+        cfg.margen = margen
     return guardar(db, cfg)
 
-# ----------------- mecanismos 
-def get_status(db: Session) -> Mecanismos:
-    "Devuelve estado de mecanismos. Si hay ESP32, sincroniza con snapshot();"
-    stat = db.query(Mecanismos).first()
+# ----------------- mecanismos (snapshot por dispositivo)
+
+def get_status(db: Session, esp_id: str) -> Mecanismos:
+    d = get_or_create_device(db, esp_id)
+    stat = db.query(Mecanismos).filter(Mecanismos.device_id == d.id).first()
     if not stat:
-        stat = guardar(db, Mecanismos())
+        stat = guardar(db, Mecanismos(device_id=d.id))
 
     cx = _get_esp32_connection()
     if cx is not None:
         try:
-            
             snap = cx.snapshot()
             if "bomba" in snap:       stat.bomba = bool(snap["bomba"])
             if "ventilador" in snap:  stat.ventilador = bool(snap["ventilador"])
@@ -82,16 +90,17 @@ def get_status(db: Session) -> Mecanismos:
             stat = guardar(db, stat)
         except Exception as e:
             print("[ESP32] snapshot falló:", e)
-            # devolvemos lo que tengamos en db
-
     return stat
 
 def set_mecanismo(
     db: Session,
+    esp_id: str,
     bomba: Optional[bool] = None,
     luz: Optional[bool] = None,
     ventilador: Optional[bool] = None,
 ) -> Mecanismos:
+    d = get_or_create_device(db, esp_id)
+
     cx = _get_esp32_connection()
     if cx is not None:
         try:
@@ -99,11 +108,11 @@ def set_mecanismo(
             if ventilador is not None: cx.set_ventilador(bool(ventilador))
             if luz is not None:        cx.set_luz(bool(luz))
         except Exception as e:
-            print("[ESP32] set_mecanismo fallo", e)
+            print("[ESP32] set_mecanismo falló:", e)
 
-    mech = db.query(Mecanismos).first()
+    mech = db.query(Mecanismos).filter(Mecanismos.device_id == d.id).first()
     if not mech:
-        mech = Mecanismos()
+        mech = Mecanismos(device_id=d.id)
 
     if bomba is not None:      mech.bomba = bool(bomba)
     if luz is not None:        mech.luz = bool(luz)
@@ -111,21 +120,28 @@ def set_mecanismo(
 
     return guardar(db, mech)
 
-# ----------------- lecturas
+# ----------------- lecturas (por dispositivo)
+
 def agregar_lectura(
+    esp_id: str,
     temperatura: float,
     humedad: float,
     humedad_suelo: float,
     nivel_de_agua: float,
 ) -> Lectura:
-    """Maneja su propia sesión porque es llamada desde un hilo secundario (ESP32)."""
+    """
+    Inserta lectura para un dispositivo. Maneja su propia sesión
+    porque suele ser llamada desde un hilo secundario (puente ESP32).
+    """
     db = SessionLocal()
     try:
+        d = get_or_create_device(db, esp_id)
         obj = Lectura(
+            device_id=d.id,
             temperatura=temperatura,
             humedad=humedad,
             humedad_suelo=humedad_suelo,
-            nivel_de_agua=nivel_de_agua, 
+            nivel_de_agua=nivel_de_agua,
         )
         db.add(obj)
         db.commit()
@@ -137,43 +153,63 @@ def agregar_lectura(
     finally:
         db.close()
 
-def ultima_lectura(db: Session) -> Optional[Lectura]:
-    """devuelve la última lectura registrada (recibe 'db' de FastAPI)."""
-    lecturas = select(Lectura).order_by(desc(Lectura.fecha_hora)).limit(1)
-    return db.execute(lecturas).scalars().first()
+def ultima_lectura(db: Session, esp_id: str) -> Optional[Lectura]:
+    d = db.query(Dispositivo).filter_by(esp_id=esp_id).first()
+    if not d:
+        return None
+    stmt = (
+        select(Lectura)
+        .where(Lectura.device_id == d.id)
+        .order_by(desc(Lectura.fecha_hora))
+        .limit(1)
+    )
+    return db.execute(stmt).scalars().first()
 
-def ultimas_lecturas_7d(db: Session) -> List[Lectura]:
-    "devuelve todas las lecturas dentro de los últimos 7 días (orden desc)"
-    # Esta función recibe 'db' de FastAPI y lo usa directamente.
+def ultimas_lecturas_7d(db: Session, esp_id: str) -> List[Lectura]:
+    "devuelve todas las lecturas dentro de los últimos 7 días (orden desc) para una ESP32"
+    d = db.query(Dispositivo).filter_by(esp_id=esp_id).first()
+    if not d:
+        return []
     cutoff = datetime.now(timezone.utc) - timedelta(days=7)
     stmt = (
         select(Lectura)
-        .where(Lectura.fecha_hora >= cutoff)
+        .where(Lectura.device_id == d.id, Lectura.fecha_hora >= cutoff)
         .order_by(desc(Lectura.fecha_hora))
     )
     return db.execute(stmt).scalars().all()
 
-def csv_from(days: int) -> str:
-    """Genera un CSV de lecturas. Abre su propia sesión ya que no es un endpoint estándar de CRUD."""
+def csv_from(esp_id: str, days: int) -> str:
+    """
+    Genera un CSV de lecturas para un dispositivo.
+    Abre su propia sesión ya que no es un endpoint estándar de CRUD.
+    """
     now_utc = datetime.now(timezone.utc)
     cutoff = now_utc - timedelta(days=days)
 
-    db = SessionLocal() # Usa SessionLocal ya que no depende de FastAPI Depends
+    db = SessionLocal()
     try:
-        stmt = (
-            select(
-                Lectura.fecha_hora,
-                Lectura.temperatura,
-                Lectura.humedad_suelo,
-                Lectura.humedad,
+        d = db.query(Dispositivo).filter_by(esp_id=esp_id).first()
+        if not d:
+            rows = []
+        else:
+            stmt = (
+                select(
+                    Lectura.fecha_hora,
+                    Lectura.temperatura,
+                    Lectura.humedad_suelo,
+                    Lectura.humedad,
+                )
+                .where(
+                    Lectura.device_id == d.id,
+                    Lectura.fecha_hora >= cutoff,
+                    Lectura.fecha_hora <= now_utc,
+                )
+                .order_by(desc(Lectura.fecha_hora))
             )
-            .where(Lectura.fecha_hora >= cutoff, Lectura.fecha_hora <= now_utc)
-            .order_by(desc(Lectura.fecha_hora))
-        )
-        rows = db.execute(stmt).all()
+            rows = db.execute(stmt).all()
     finally:
         db.close()
-        
+
     buf = io.StringIO()
     writer = csv.writer(buf)
     writer.writerow(["fecha_hora", "temperatura", "humedad_suelo", "humedad"])
@@ -182,10 +218,8 @@ def csv_from(days: int) -> str:
     for dt, temperatura, humedad_suelo, humedad in rows:
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=timezone.utc)
-        'fecha/hora'
         dt_local = dt.astimezone(tz).isoformat()
 
-        'formateo con simbolos'
         temp = f"{temperatura:.1f} °C"
         hum_suelo = f"{humedad_suelo:.1f} %"
         hum = f"{humedad:.1f} %"

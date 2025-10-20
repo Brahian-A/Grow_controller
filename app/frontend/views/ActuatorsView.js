@@ -74,10 +74,7 @@ export default function ActuatorsView(container){
 
   async function refresh(){
     try{
-      const [m, latest] = await Promise.all([
-        getMech(),
-        getLatest()
-      ]);
+      const [m, latest] = await Promise.all([ getMech(), getLatest() ]);
       mech = m;
       paintStates();
       paintWater(latest?.nivel_de_agua);
@@ -88,35 +85,38 @@ export default function ActuatorsView(container){
   }
 
   async function toggle(field){
-  if (!mech || busy) return;
-  busy = true;
-  try{
-    const payload = { [field]: !mech[field] };
-    const updated = await putMech(payload);
-    mech = { ...mech, ...updated };
-    paintStates();
-  }catch(e){
-    console.warn("toggle error", field, e);
-  }finally{
-    busy = false;
+    if (!mech || busy) return;
+    busy = true;
+    try{
+      const payload = { [field]: !mech[field] };
+      const updated = await putMech(payload);
+      if (updated) {
+        mech = { ...mech, ...updated };
+        paintStates();
+      }
+    }catch(e){
+      console.warn("toggle error", field, e);
+    }finally{
+      busy = false;
+    }
   }
-}
 
-async function stopAll(){
-  if (!mech || busy) return;
-  busy = true;
-  try{
-    const payload = { bomba:false, luz:false, ventilador:false };
-    const updated = await putMech(payload);
-    mech = { ...mech, ...updated };
-    paintStates();
-  }catch(e){
-    console.warn("stopAll error", e);
-  }finally{
-    busy = false;
+  async function stopAll(){
+    if (!mech || busy) return;
+    busy = true;
+    try{
+      const payload = { bomba:false, luz:false, ventilador:false };
+      const updated = await putMech(payload);
+      if (updated) {
+        mech = { ...mech, ...updated };
+        paintStates();
+      }
+    }catch(e){
+      console.warn("stopAll error", e);
+    }finally{
+      busy = false;
+    }
   }
-}
-
 
   wrap.addEventListener("click", (e)=>{
     if (e.target.closest("#card-luces")) toggle("luz");
@@ -124,6 +124,12 @@ async function stopAll(){
     else if (e.target.closest("#card-riego")) toggle("bomba");
     else if (e.target.closest("#btn-stop"))   stopAll();
   });
+
+
+  window.addEventListener("esp:changed", () => {
+    if (timer) clearTimeout(timer);
+    refresh();
+  }, { passive:true });
 
   refresh();
   return () => { running = false; if (timer) clearTimeout(timer); };

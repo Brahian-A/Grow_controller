@@ -10,7 +10,11 @@
   <header class="topbar">
     <button id="btn-menu">☰</button>
     <h2>Invernadero</h2>
-    <div id="badge-online" class="badge">● Online</div>
+    <div style="display:flex; align-items:center; gap:8px;">
+      <select id="device-select" style="border-radius:10px;padding:6px 8px;border:0;outline:none"></select>
+      <button id="btn-add-device" class="btn" style="padding:6px 10px;">+ Agregar</button>
+      <div id="badge-online" class="badge">● Online</div>
+    </div>
   </header>
 
   <aside id="sidebar">
