@@ -1,20 +1,18 @@
-# app/conexiones/conexion_esp32.py
-import json, time, threading, logging
+import json, time, threading, logging, os
 from typing import Optional, Dict, Any
 from dataclasses import dataclass, field
 
-import serial  
+import serial
 
 SERIAL_PORT = "/dev/serial/by-id/usb-Espressif_USB_JTAG_serial_debug_unit_DC:DA:0C:58:08:84-if00"
 BAUD = 115200
 SERIAL_TIMEOUT = 1.0
 RETRY_SEC = 2
 
-DB_PERIOD_SEC = 60
+DB_PERIOD_SEC = 60  # persistir 1 vez por minuto
 
 @dataclass
 class Snapshot:
-    "in-memory state mirrored from the ESP32 and persisted timing"
     last_data: Dict[str, Any] = field(default_factory=dict)
     last_data_ts: float = 0.0
     last_saved_ts: float = 0.0
@@ -29,34 +27,24 @@ _reader_th: Optional[threading.Thread] = None
 _stop = False
 _write_lock = threading.Lock()
 
+_last_esp_id: Optional[str] = None  # se actualiza al recibir HELLO/DATA
 
 def _on_save_lectura(data: Dict[str, Any]) -> None:
-    """
-    Map ESP JSON payload to the Lectura model and save AT MOST once per minute.
-
-    Expected JSON example from ESP:
-      {
-        "type":"DATA",
-        "raw":3445,
-        "suelo_pct":0,
-        "hum_amb":72.7,
-        "temp_c":23.9,
-        "nivel_pct":0, "nivel_estado":"VACIO",
-        "v_bajo":0.8, "v_medio":0.7, "v_alto":0.6
-      }
-    """
     try:
         from app.servicios.funciones import agregar_lectura
-        temperatura    = float(data.get("temp_c"))      if data.get("temp_c")   is not None else None
-        humedad        = float(data.get("hum_amb"))     if data.get("hum_amb")  is not None else None
-        humedad_suelo  = float(data.get("suelo_pct"))   if data.get("suelo_pct") is not None else None
-        nivel_de_agua  = float(data.get("nivel_pct"))   if data.get("nivel_pct") is not None else None
+        temperatura    = float(data["temp_c"])
+        humedad        = float(data["hum_amb"])
+        humedad_suelo  = float(data["suelo_pct"])
+        nivel_de_agua  = float(data["nivel_pct"])
+    except Exception:
+        logging.warning(f"[ESP32] DATA incompleta, no guardo: {data}")
+        return
 
-        if None in (temperatura, humedad, humedad_suelo, nivel_de_agua):
-            logging.warning(f"[ESP32] DATA incompleta, no guardo: {data}")
-            return
+    esp_id = data.get("esp_id") or _last_esp_id or os.getenv("DEFAULT_ESP_ID") or "default-esp"
 
+    try:
         agregar_lectura(
+            esp_id=esp_id,
             temperatura=temperatura,
             humedad=humedad,
             humedad_suelo=humedad_suelo,
@@ -66,7 +54,6 @@ def _on_save_lectura(data: Dict[str, Any]) -> None:
         logging.exception(f"[ESP32] guardar lectura falló: {e}")
 
 def _open_serial():
-    "try to open the serial port, retrying until available or stopped"
     global _serial
     while not _stop:
         try:
@@ -78,18 +65,15 @@ def _open_serial():
             time.sleep(RETRY_SEC)
 
 def _maybe_save_to_db(data: Dict[str, Any]):
-    "throttle database writes so we persist at most once every DB_PERIOD_SEC seconds"
     now = time.time()
     snap.last_data = data
     snap.last_data_ts = now
-
     if now - snap.last_saved_ts >= DB_PERIOD_SEC:
         _on_save_lectura(data)
         snap.last_saved_ts = now
 
 def _reader_loop():
-    "background loop that reads JSON lines from the serial port and updates state"
-    global _serial
+    global _serial, _last_esp_id
     buf = ""
     while not _stop:
         if _serial is None or not _serial.is_open:
@@ -110,11 +94,18 @@ def _reader_loop():
                 except json.JSONDecodeError:
                     continue
 
+                # Capturar ID si viene
+                _last_esp_id = obj.get("esp_id") or _last_esp_id
+                if "hello" in obj and isinstance(obj["hello"], dict):
+                    _last_esp_id = obj["hello"].get("esp_id") or _last_esp_id
+
+                # Estados
                 if obj.get("type") == "STATUS":
                     snap.riego = (obj.get("riego") == "ON")
                     snap.vent  = (obj.get("vent")  == "ON")
                     snap.luz   = (obj.get("luz")   == "ON")
 
+                # Datos
                 if obj.get("type") == "DATA":
                     if all(k in obj for k in ("suelo_pct", "hum_amb", "temp_c", "nivel_pct")):
                         _maybe_save_to_db(obj)
@@ -129,7 +120,6 @@ def _reader_loop():
             time.sleep(RETRY_SEC)
 
 def iniciar_lector():
-    "start the reader thread (idempotent). Call during server startup"
     global _reader_th, _stop
     if _reader_th and _reader_th.is_alive():
         return
@@ -139,7 +129,6 @@ def iniciar_lector():
     logging.info("[ESP32] Lector iniciado")
 
 def detener_lector():
-    "signal the reader loop to stop and close the serial port if open"
     global _stop, _serial
     _stop = True
     try:
@@ -149,7 +138,6 @@ def detener_lector():
         pass
 
 def enviar_cmd(cmd: dict, wait: float = 0.2):
-    "send a JSON command over serial to the ESP (for RIEGO/VENT/LUZ/STATUS)"
     line = (json.dumps(cmd) + "\n").encode()
     with _write_lock:
         if not _serial or not _serial.is_open:
@@ -165,7 +153,6 @@ def enviar_cmd(cmd: dict, wait: float = 0.2):
     time.sleep(wait)
 
 def get_snapshot() -> Dict[str, Any]:
-    "return a dictionary containing last sensor data, timestamps, and mechanism states"
     return {
         "last_data": snap.last_data,
         "last_data_ts": snap.last_data_ts,
@@ -174,4 +161,5 @@ def get_snapshot() -> Dict[str, Any]:
         "vent":  snap.vent,
         "luz":   snap.luz,
         "serial_port": SERIAL_PORT,
+        "esp_id": _last_esp_id,
     }

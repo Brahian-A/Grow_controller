@@ -1,27 +1,23 @@
-from app.db.session import SessionLocal
 from fastapi import Depends, Query, HTTPException
 from sqlalchemy.orm import Session
 from typing import Optional
 import os
 
-from app.db.models import Dispositivo  # importa el modelo
+from app.db.session import SessionLocal
+from app.db.models import Dispositivo, Mecanismos, Config
 
-# ---------------- sesion
-
+# ---- Sesión
 def get_db():
-    """FastAPI dependency that yields a database session and ensures it is closed afterward"""
     db = SessionLocal()
     try:
         yield db
     finally:
         db.close()
 
-
-# ------------------ resuelve la esp id
-
+# ---- Resolver esp_id centralizado
 def resolve_esp_id(
-    esp_id: Optional[str] = Query(None),
     db: Session = Depends(get_db),
+    esp_id: Optional[str] = Query(None)
 ) -> str:
     if esp_id:
         return esp_id
@@ -30,16 +26,20 @@ def resolve_esp_id(
     if env_uid:
         return env_uid
 
-    total = db.query(Dispositivo).count()
-    if total == 0:
-        raise HTTPException(
-            status_code=422,
-            detail="No hay dispositivos registrados.",
-        )
-    if total == 1:
+    count = db.query(Dispositivo).count()
+
+    if count == 0:
+        d = Dispositivo(esp_id="default-esp")
+        db.add(d); db.commit(); db.refresh(d)
+        db.add(Mecanismos(device_id=d.id))
+        db.add(Config(device_id=d.id))
+        db.commit()
+        return d.esp_id
+
+    if count == 1:
         return db.query(Dispositivo).first().esp_id
 
     raise HTTPException(
         status_code=422,
-        detail="Falta esp_id y hay múltiples dispositivos.",
+        detail="Falta esp_id y hay múltiples dispositivos. Pasa ?esp_id=..."
     )
