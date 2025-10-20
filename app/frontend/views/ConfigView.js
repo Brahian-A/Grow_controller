@@ -1,15 +1,6 @@
 import { mount } from "../core/dom.js";
 import { getConfig, putConfig } from "../api/index.js";
 
-async function suggestByPlant(plantName){
-  const res = await fetch("/ai/planta", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ planta: plantName })
-  });
-  return res.json();
-}
-
 export default async function ConfigView(container){
   const form = document.createElement("form");
   form.className = "form";
@@ -21,31 +12,21 @@ export default async function ConfigView(container){
     <div class="card" style="padding:16px">
       <h3 style="margin:0 0 8px">Umbrales</h3>
 
-      <label>Temp. umbral alto (°C)
-        <input type="number" name="temperatura_umbral_alto" value="${c.temperatura_umbral_alto}">
-      </label>
-      <label>Temp. umbral bajo (°C)
-        <input type="number" name="temperatura_umbral_bajo" value="${c.temperatura_umbral_bajo}">
+      <label>Temperatura (°C)
+        <input type="number" name="temperatura" value="${c?.temperatura ?? 35}">
       </label>
 
-      <label>Humedad umbral alto (%)
-        <input type="number" name="humedad_umbral_alto" value="${c.humedad_umbral_alto}">
-      </label>
-      <label>Humedad umbral bajo (%)
-        <input type="number" name="humedad_umbral_bajo" value="${c.humedad_umbral_bajo}">
+      <label>Humedad Ambiente (%)
+        <input type="number" name="humedad_ambiente" value="${c?.humedad_ambiente ?? 30}">
       </label>
 
-      <label>Suelo umbral alto (%)
-        <input type="number" name="humedad_suelo_umbral_alto" value="${c.humedad_suelo_umbral_alto}">
+      <label>Humedad de Suelo (%)
+        <input type="number" name="humedad_suelo" value="${c?.humedad_suelo ?? 55}">
       </label>
-      <label>Suelo umbral bajo (%)
-        <input type="number" name="humedad_suelo_umbral_bajo" value="${c.humedad_suelo_umbral_bajo}">
-      </label>
-    </div>
 
-    <div class="card" style="padding:16px">
-      <h3 style="margin:0 0 8px">¿Cuál es tu planta?</h3>
-      <input type="text" name="planta" placeholder="ej: tomate cherry" style="opacity:.9" />
+      <label>Margen (≥5)
+        <input type="number" name="margen" min="5" value="${c?.margen ?? 5}">
+      </label>
     </div>
 
     <button type="submit" class="btn" style="margin-top:6px">Guardar</button>
@@ -53,30 +34,24 @@ export default async function ConfigView(container){
 
   form.addEventListener("submit", async (e)=>{
     e.preventDefault();
-    const raw = Object.fromEntries(new FormData(form).entries());
-
-    const plant = (raw.planta || "").trim();
-    if (plant){
-      const suggested = await suggestByPlant(plant);
-      ["temperatura_umbral_alto","temperatura_umbral_bajo",
-       "humedad_umbral_alto","humedad_umbral_bajo",
-       "humedad_suelo_umbral_alto","humedad_suelo_umbral_bajo"
-      ].forEach(k=>{
-        const v = suggested?.[k];
-        const inp = form.querySelector(`input[name="${k}"]`);
-        if (inp && v != null) inp.value = v;
-      });
-    }
-
     const data = Object.fromEntries(new FormData(form).entries());
-    await putConfig({
-      id: c.id,
-      temperatura_umbral_alto: Number(data.temperatura_umbral_alto),
-      temperatura_umbral_bajo: Number(data.temperatura_umbral_bajo),
-      humedad_umbral_alto: Number(data.humedad_umbral_alto),
-      humedad_umbral_bajo: Number(data.humedad_umbral_bajo),
-      humedad_suelo_umbral_alto: Number(data.humedad_suelo_umbral_alto),
-      humedad_suelo_umbral_bajo: Number(data.humedad_suelo_umbral_bajo),
-    });
+    const payload = {
+      temperatura: Number(data.temperatura),
+      humedad_ambiente: Number(data.humedad_ambiente),
+      humedad_suelo: Number(data.humedad_suelo),
+      margen: Number(data.margen),
+    };
+    await putConfig(payload);
+    alert("Configuración guardada ✅");
   });
+
+
+  window.addEventListener("esp:changed", async ()=>{
+    const nc = await getConfig();
+    if (!nc) return;
+    form.querySelector('input[name="temperatura"]').value = nc.temperatura ?? 35;
+    form.querySelector('input[name="humedad_ambiente"]').value = nc.humedad_ambiente ?? 30;
+    form.querySelector('input[name="humedad_suelo"]').value = nc.humedad_suelo ?? 55;
+    form.querySelector('input[name="margen"]').value = nc.margen ?? 5;
+  }, { passive:true });
 }

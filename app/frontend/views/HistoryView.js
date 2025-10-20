@@ -2,7 +2,7 @@ import { mount } from "../core/dom.js";
 import { getHistory } from "../api/index.js";
 import { drawLine } from "../ui/Chart.js";
 
-export default async function HistoryView(container){
+export default function HistoryView(container){
   const wrap = document.createElement("div");
   wrap.className = "cards";
   wrap.innerHTML = `
@@ -12,8 +12,36 @@ export default async function HistoryView(container){
   `;
   mount(container, wrap);
 
-  const history = (await getHistory()).slice(-24).sort((a,b)=> new Date(a.fecha_hora)-new Date(b.fecha_hora));
-  drawLine(wrap.querySelector("#c1"), history.map(r=>r.temperatura));
-  drawLine(wrap.querySelector("#c2"), history.map(r=>r.humedad));
-  drawLine(wrap.querySelector("#c3"), history.map(r=>r.humedad_suelo));
+  const c1 = wrap.querySelector("#c1");
+  const c2 = wrap.querySelector("#c2");
+  const c3 = wrap.querySelector("#c3");
+
+  let timer = null;
+  let running = true;
+
+  async function refresh(){
+    try{
+      const history = (await getHistory()) || [];
+      const last24 = history.slice(-24).sort((a,b)=> new Date(a.fecha_hora)-new Date(b.fecha_hora));
+      drawLine(c1, last24.map(r=>r.temperatura));
+      drawLine(c2, last24.map(r=>r.humedad));
+      drawLine(c3, last24.map(r=>r.humedad_suelo));
+    }catch(e){
+      // silencioso
+    }finally{
+      if (running) timer = setTimeout(refresh, 5000);
+    }
+  }
+
+
+  const onEspChanged = () => { if (timer) clearTimeout(timer); refresh(); };
+  window.addEventListener("esp:changed", onEspChanged, { passive:true });
+
+  refresh();
+
+  return () => {
+    running = false;
+    if (timer) clearTimeout(timer);
+    window.removeEventListener("esp:changed", onEspChanged);
+  };
 }

@@ -27,20 +27,14 @@ export default function DashboardView(container){
   async function refresh(){
     try{
       const [latest, history] = await Promise.all([ getLatest(), getHistory() ]);
-      const tempTxt = fmt(latest.temperatura,"°C");
-      if (elTemp.textContent !== tempTxt) elTemp.textContent = tempTxt;
-
-      const humTxt = fmt(latest.humedad,"%");
-      if (elHum.textContent !== humTxt) elHum.textContent = humTxt;
-
-      const soilTxt = fmt(latest.humedad_suelo,"%");
-      if (elSoil.textContent !== soilTxt) elSoil.textContent = soilTxt;
-
-      const ts = latest.fecha_hora ? new Date(latest.fecha_hora).toLocaleTimeString() : "";
-      const tsTxt = ts ? `Actualizado ${ts}` : "";
-      if (elTs.textContent !== tsTxt) elTs.textContent = tsTxt;
-
-      const last24 = history.slice(-24).sort((a,b)=> new Date(a.fecha_hora)-new Date(b.fecha_hora));
+      if (latest){
+        const tempTxt = fmt(latest.temperatura,"°C"); if (elTemp.textContent !== tempTxt) elTemp.textContent = tempTxt;
+        const humTxt  = fmt(latest.humedad,"%");       if (elHum.textContent  !== humTxt)  elHum.textContent  = humTxt;
+        const soilTxt = fmt(latest.humedad_suelo,"%"); if (elSoil.textContent !== soilTxt) elSoil.textContent = soilTxt;
+        const ts = latest.fecha_hora ? new Date(latest.fecha_hora).toLocaleTimeString() : "";
+        elTs.textContent = ts ? `Actualizado ${ts}` : "";
+      }
+      const last24 = (history || []).slice(-24).sort((a,b)=> new Date(a.fecha_hora)-new Date(b.fecha_hora));
       drawLine(canvas, last24.map(r=>r.temperatura));
     }catch(e){
     }finally{
@@ -48,7 +42,14 @@ export default function DashboardView(container){
     }
   }
 
+  const onEspChanged = () => { if (timer) clearTimeout(timer); refresh(); };
+  window.addEventListener("esp:changed", onEspChanged, { passive:true });
+
   refresh();
 
-  return () => { running = false; if (timer) clearTimeout(timer); };
+  return () => { 
+    running = false; 
+    if (timer) clearTimeout(timer); 
+    window.removeEventListener("esp:changed", onEspChanged);
+  };
 }
