@@ -75,10 +75,16 @@ export default function ActuatorsView(container){
   async function refresh(){
     try{
       const [m, latest] = await Promise.all([ getMech(), getLatest() ]);
-      mech = m;
-      paintStates();
-      paintWater(latest?.nivel_de_agua);
+
+      if (!m?.__error && m) {
+        mech = m;
+        paintStates();
+      }
+      if (!latest?.__error && latest?.nivel_de_agua != null) {
+        paintWater(latest.nivel_de_agua);
+      }
     }catch(e){
+      // silenciar
     }finally{
       if (running) timer = setTimeout(refresh, 5000);
     }
@@ -88,14 +94,20 @@ export default function ActuatorsView(container){
     if (!mech || busy) return;
     busy = true;
     try{
-      const payload = { [field]: !mech[field] };
-      const updated = await putMech(payload);
+      const nextVal = !mech[field];
+      mech = { ...mech, [field]: nextVal };
+      paintStates();
+
+      const updated = await putMech({ [field]: nextVal });
+
+      if (updated?.__error) {
+        return;
+      }
       if (updated) {
         mech = { ...mech, ...updated };
         paintStates();
       }
     }catch(e){
-      console.warn("toggle error", field, e);
     }finally{
       busy = false;
     }
@@ -105,14 +117,19 @@ export default function ActuatorsView(container){
     if (!mech || busy) return;
     busy = true;
     try{
-      const payload = { bomba:false, luz:false, ventilador:false };
-      const updated = await putMech(payload);
+      mech = { ...mech, bomba:false, luz:false, ventilador:false };
+      paintStates();
+
+      const updated = await putMech({ bomba:false, luz:false, ventilador:false });
+
+      if (updated?.__error) {
+        return;
+      }
       if (updated) {
         mech = { ...mech, ...updated };
         paintStates();
       }
     }catch(e){
-      console.warn("stopAll error", e);
     }finally{
       busy = false;
     }
@@ -125,9 +142,12 @@ export default function ActuatorsView(container){
     else if (e.target.closest("#btn-stop"))   stopAll();
   });
 
-
+  // al cambiar de dispositivo limpiar UI y refresca
   window.addEventListener("esp:changed", () => {
     if (timer) clearTimeout(timer);
+    mech = { luz:false, ventilador:false, bomba:false };
+    paintStates();
+    paintWater(0);
     refresh();
   }, { passive:true });
 

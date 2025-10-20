@@ -13,7 +13,7 @@ async function req(path, opts = {}, attachEsp = true) {
   let url = API_PREFIX + path;
   const isGET = !opts.method || opts.method.toUpperCase() === "GET";
 
-  //esp_id
+  // Adjuntar esp_id
   if (attachEsp && isGET) {
     const esp_id = getActiveEsp();
     if (esp_id) url += (url.includes("?") ? "&" : "?") + new URLSearchParams({ esp_id });
@@ -27,35 +27,37 @@ async function req(path, opts = {}, attachEsp = true) {
     } catch {}
   }
 
-  // cache busting en get
   if (isGET) {
     url += (url.includes("?") ? "&" : "?") + `_t=${Date.now()}`;
   }
 
-  // evitar cache del navegador/proxy
+  // Evitar cache del navegador
   const finalOpts = { ...opts, headers, cache: "no-store" };
 
   const res = await fetch(url, finalOpts);
-  if (!res.ok) {
-    console.warn("API error", url, res.status);
-    return null;
+
+  if (res.ok) {
+    try { return await res.json(); } catch { return null; }
   }
-  try { return await res.json(); } catch { return null; }
+
+  let data = null;
+  try { data = await res.json(); } catch {}
+  return { __error: true, __status: res.status, detail: data?.detail ?? null };
 }
 
-// lecturas
+// ---- Lecturas
 export const getLatest  = () => req("/lecturas/ultima");
 export const getHistory = () => req("/lecturas");
 
-//config
+// ---- Config
 export const getConfig  = () => req("/config");
 export const putConfig  = (data) => req("/config", { method: "PUT", body: JSON.stringify(data) });
 
-// mecanismos
+// ---- Mecanismos
 export const getMech    = () => req("/mecanismos");
 export const putMech    = (data) => req("/mecanismos", { method: "PUT", body: JSON.stringify(data) });
 
-//dispositivos 
+// ---- Dispositivos
 export const listDevices = () => req("/dispositivos", {}, false);
 export const addDevice   = (data) => req("/dispositivos", { method:"POST", body: JSON.stringify(data) }, false);
 export const getDevice   = (esp_id) => req(`/dispositivos/${encodeURIComponent(esp_id)}`, {}, false);

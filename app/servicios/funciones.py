@@ -62,14 +62,26 @@ def get_status(db: Session, esp_id: str) -> Mecanismos:
 
 def set_mecanismo(db: Session, esp_id: str, bomba=None, luz=None, ventilador=None) -> Mecanismos:
     d = get_or_create_device(db, esp_id)
-    if bomba is not None:      enviar_cmd({"cmd":"SET","target":"RIEGO","value":"ON" if bomba else "OFF"})
-    if ventilador is not None: enviar_cmd({"cmd":"SET","target":"VENT","value":"ON" if ventilador else "OFF"})
-    if luz is not None:        enviar_cmd({"cmd":"SET","target":"LUZ","value":"ON" if luz else "OFF"})
+
+    serial_ok = True
+    # Intentar enviar a la ESP pero no fallar si no hay puerto
+    if bomba is not None:
+        serial_ok = enviar_cmd({"cmd":"SET","target":"RIEGO","value":"ON" if bomba else "OFF"}) and serial_ok
+    if ventilador is not None:
+        serial_ok = enviar_cmd({"cmd":"SET","target":"VENT","value":"ON" if ventilador else "OFF"}) and serial_ok
+    if luz is not None:
+        serial_ok = enviar_cmd({"cmd":"SET","target":"LUZ","value":"ON" if luz else "OFF"}) and serial_ok
+
     mech = db.query(Mecanismos).filter(Mecanismos.device_id == d.id).first() or Mecanismos(device_id=d.id)
     if bomba is not None:      mech.bomba = bool(bomba)
     if luz is not None:        mech.luz = bool(luz)
     if ventilador is not None: mech.ventilador = bool(ventilador)
-    return guardar(db, mech)
+
+    mech = guardar(db, mech)
+
+    mech._warning = None if serial_ok else "serial_unavailable"
+    return mech
+
 
 # ----------------- lecturas (por dispositivo)
 

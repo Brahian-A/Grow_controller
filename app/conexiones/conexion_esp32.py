@@ -137,11 +137,14 @@ def detener_lector():
     except:
         pass
 
-def enviar_cmd(cmd: dict, wait: float = 0.2):
+# ... arriba igual ...
+
+def enviar_cmd(cmd: dict, wait: float = 0.2) -> bool:
     line = (json.dumps(cmd) + "\n").encode()
     with _write_lock:
         if not _serial or not _serial.is_open:
-            raise RuntimeError("Puerto serie no disponible")
+            logging.warning("[ESP32] enviar_cmd: puerto serie no disponible")
+            return False
         _serial.write(line)
         _serial.flush()
     if cmd.get("cmd") == "SET":
@@ -151,6 +154,8 @@ def enviar_cmd(cmd: dict, wait: float = 0.2):
         if tgt == "VENT":  snap.vent  = on
         if tgt == "LUZ":   snap.luz   = on
     time.sleep(wait)
+    return True
+
 
 def get_snapshot() -> Dict[str, Any]:
     return {
