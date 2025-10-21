@@ -46,7 +46,7 @@ def create_app() -> FastAPI:
         conf_dir = Path(__file__).parent / "frontend" / "conf_mode"
         app.mount("/", StaticFiles(directory=conf_dir, html=True), name="setup_form")
 
-        @app.post("/wifi")
+        @app.post("/api/v1/wifi")
         async def setup_wifi(credentials: dict):
             ssid = credentials.get("ssid")
             password = credentials.get("password")
@@ -70,14 +70,12 @@ def create_app() -> FastAPI:
         # creacion de las tablas de la db provisional hasta agregar migraciones
         Base.metadata.create_all(bind=engine)
 
-        # rutas(con y sin prefijo)
+        # rutas(con prefijo /api/v1)
         app.include_router(lecturas_router,   prefix="/api/v1")
         app.include_router(config_router,     prefix="/api/v1")
         app.include_router(mecanismos_router, prefix="/api/v1")
         app.include_router(system_router,     prefix="/api/v1")
         app.include_router(devices_router, prefix="/api/v1")
-
-        # rutas sin prefijo si ellas no funciona el front
 
         # endpoint de salud
         @app.get("/health")

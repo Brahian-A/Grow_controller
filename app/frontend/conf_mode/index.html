@@ -43,7 +43,7 @@
             messageDiv.textContent = 'Enviando credenciales... reiniciando en breve.';
             
             try {
-                const response = await fetch('/wifi', {
+                const response = await fetch('/api/v1/wifi', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ ssid, password })
