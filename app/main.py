@@ -96,7 +96,7 @@ def create_app() -> FastAPI:
         
         @app.on_event("startup")
         def _startup():
-            "start background ESP32 serial reader on app startup
+            "start background ESP32 serial reader on app startup"
             iniciar_lector()
 
     return app
