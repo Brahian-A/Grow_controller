@@ -137,7 +137,6 @@ def detener_lector():
     except:
         pass
 
-# ... arriba igual ...
 
 def enviar_cmd(cmd: dict, wait: float = 0.2) -> bool:
     line = (json.dumps(cmd) + "\n").encode()
