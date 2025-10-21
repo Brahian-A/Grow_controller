@@ -41,7 +41,7 @@ def create_app() -> FastAPI:
         conf_dir = Path(__file__).parent / "frontend" / "conf_mode"
         app.mount("/", StaticFiles(directory=conf_dir, html=True), name="setup_form")
 
-        @app.post("/api/v1/wifi")
+        @app.post("/wifi")
         async def setup_wifi(credentials: dict):
             ssid = credentials.get("ssid")
             password = credentials.get("password")
