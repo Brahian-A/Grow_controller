@@ -1,31 +1,24 @@
 #!/bin/bash
+# Inicia en modo CONFIGURATION si wlan0 no tiene IP; crea hotspot con nmcli.
+# Si ya tiene IP, arranca modo NORMAL.
 
-# Esperamos 5 segundos a que conecte a la red
-#Wait for 5 seconds to stablish network connection
-sleep 10
+sleep 8
 
-#Obtenemos la IP de la WAN
-#Obtain the WAN IP
-IP_WAN=$(hostname -I | awk '{print $1}')
+# Detecta IP de wlan0 (solo IPv4)
+IP_WLAN=$(ip -4 addr show dev wlan0 | awk '/inet /{print $2}' | cut -d/ -f1)
 
-#Si no hay IP, iniciamos en modo configuracion
-#if there is not IP, start un configuration mode
-if [ -z "$IP_WAN" ]; then
-    echo "Sin conexión a la red. Iniciando en modo configuración."
+if [ -z "$IP_WLAN" ]; then
+  echo "[start] Sin IP en wlan0. Creando hotspot y entrando en CONFIGURATION."
+  # Asegura que NM maneje la interfaz
+  nmcli dev disconnect wlan0 2>/dev/null
+  # Crea/levanta hotspot (SSID+clave puedes cambiarlos)
+  nmcli dev wifi hotspot ifname wlan0 ssid Greenhouse_Setup password 12345678
 
-    sudo ifconfig wlan0 192.168.4.1 netmask 255.255.255.0
-    sudo systemctl start hostapd
-    sudo systemctl start dnsmasq
-
-    APP_MODE=CONFIGURATION /home/gibbs/Grow_controller/venv/bin/python3 /home/gibbs/Grow_controller/run.py
-
-#si hay IP, iniciamos en modo normal
-#if there is an IP, start in normal mode
+  APP_MODE=CONFIGURATION /home/gibbs/Grow_controller/venv/bin/python3 /home/gibbs/Grow_controller/run.py
 else
-    echo "Conexión establecida. Iniciando en modo normal."
+  echo "[start] wlan0 con IP ${IP_WLAN}. Entrando en NORMAL."
+  # Apaga hotspot si existiera
+  nmcli connection down Hotspot 2>/dev/null || true
 
-    sudo systemctl stop hostapd
-    sudo systemctl stop dnsmasq
-
-    APP_MODE=NORMAL /home/gibbs/Grow_controller/venv/bin/python3 /home/gibbs/Grow_controller/run.py
+  APP_MODE=NORMAL /home/gibbs/Grow_controller/venv/bin/python3 /home/gibbs/Grow_controller/run.py
 fi
