@@ -168,3 +168,59 @@ def csv_from(esp_id: str, days: int) -> str:
         dt_local = dt.astimezone(tz).isoformat()
         writer.writerow([dt_local, f"{temperatura:.1f} °C", f"{humedad_suelo:.1f} %", f"{humedad:.1f} %"])
     return buf.getvalue()
+
+# ----------------- Gemini
+
+import json
+import logging
+import google.generativeai as genai
+from app.core.config import config
+
+# Configura el modelo una sola vez al cargar el módulo
+try:
+    genai.configure(api_key=config.gemini_api_key)
+    model = genai.GenerativeModel("gemini-2.5-flash")
+except Exception as e:
+    logging.error(f"Error al configurar Gemini: {e}")
+    model = None
+
+def get_plant_conditions(plant_name: str) -> dict:
+    """
+    Consulta a Gemini las condiciones óptimas para una planta y devuelve un dict.
+    """
+    if not model:
+        raise ConnectionError("El modelo de Gemini no está disponible.")
+
+    prompt = f"""
+    Para la planta llamada "{plant_name}", genera sus condiciones óptimas de crecimiento.
+    Devuelve EXCLUSIVAMENTE un objeto JSON con las siguientes tres claves:
+    - "temperatura": el valor numérico óptimo en grados Celsius.
+    - "humedad_tierra": el valor numérico del porcentaje de humedad óptima en la tierra.
+    - "humedad_ambiente": el valor numérico del porcentaje de humedad óptima en el ambiente.
+
+    No agregues ninguna explicación, texto introductorio, ni la palabra "json".
+    Tu respuesta debe ser únicamente el objeto JSON.
+    """
+
+    try:
+        response = model.generate_content(prompt)
+        
+        # Limpiamos la respuesta de la IA
+        clean_response = response.text.strip()
+        
+        # Quitamos el formato Markdown si existe
+        if clean_response.startswith("```json"):
+            clean_response = clean_response.replace("```json", "", 1).strip()
+        if clean_response.endswith("```"):
+            clean_response = clean_response.rsplit("```", 1)[0].strip()
+
+        # Parseamos el JSON
+        data = json.loads(clean_response)
+        return data
+
+    except json.JSONDecodeError:
+        logging.error(f"Respuesta de Gemini no es un JSON válido para '{plant_name}': {response.text}")
+        raise ValueError("La respuesta de la IA no pudo ser procesada como JSON.")
+    except Exception as e:
+        logging.error(f"Error en la llamada a Gemini para '{plant_name}': {e}")
+        raise ConnectionError(f"Ocurrió un error al contactar el servicio de IA: {e}")

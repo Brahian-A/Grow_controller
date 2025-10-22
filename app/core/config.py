@@ -18,6 +18,9 @@ class Config(BaseSettings):
     # app boot mode
     app_mode: str = "NORMAL"
 
+    # Gemini API Key
+    gemini_api_key: str = "AIzaSyCMnN7EHR5KhE-g_qB44aAQpjP8PCNRVhw"
+
     model_config = SettingsConfigDict(env_file=".env", env_nested_delimiter="__")
 
 config = Config()

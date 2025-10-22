@@ -63,3 +63,6 @@ export const addDevice   = (data) => req("/dispositivos", { method:"POST", body:
 export const getDevice   = (esp_id) => req(`/dispositivos/${encodeURIComponent(esp_id)}`, {}, false);
 export const editDevice  = (esp_id, data) => req(`/dispositivos/${encodeURIComponent(esp_id)}`, { method:"PUT", body: JSON.stringify(data) }, false);
 export const delDevice   = (esp_id) => req(`/dispositivos/${encodeURIComponent(esp_id)}`, { method:"DELETE" }, false);
+
+// ---- Gemini
+export const queryPlant = (plant_name) => req("/gemini/plant-query", { method: "POST", body: JSON.stringify({ plant_name }) });

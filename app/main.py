@@ -51,6 +51,7 @@ if APP_MODE == "NORMAL":
     from app.api.v1.mecanismos import router as mecanismos_router  # noqa
     from app.api.v1.system import router as system_router  # noqa
     from app.api.v1.devices import router as devices_router  # noqa
+    from app.api.v1.gemini import router as gemini_router
     from app.conexiones.conexion_esp32 import iniciar_lector  # noqa
 
 
@@ -92,6 +93,7 @@ def create_app() -> FastAPI:
     app.include_router(mecanismos_router, prefix="/api/v1")
     app.include_router(system_router,     prefix="/api/v1")
     app.include_router(devices_router,    prefix="/api/v1")
+    app.include_router(gemini_router,     prefix="/api/v1")
 
     @app.get("/health")
     async def health(db: Session = Depends(get_db)):
