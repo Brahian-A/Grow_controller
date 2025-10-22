@@ -1,69 +1,141 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Configurar WI-FI</title>
-    
-    <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #f4f4f8; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
-        .container { background: white; padding: 2rem; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); width: 90%; max-width: 400px; }
-        h1 { margin-top: 0; color: #333; }
-        label { display: block; margin-bottom: 0.5rem; color: #555; font-weight: 600; }
-        input { box-sizing: border-box; width: 100%; padding: 0.8rem; margin-bottom: 1.2rem; border: 1px solid #ccc; border-radius: 8px; font-size: 1rem; }
-        button { width: 100%; padding: 0.8rem; background-color: #2f6b31; color: white; border: none; border-radius: 8px; font-size: 1.1rem; cursor: pointer; transition: background-color 0.2s; }
-        button:hover { background-color: #2b5f2c; }
-        #message { margin-top: 1rem; text-align: center; font-weight: 600; }
-    </style>
-
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Wi‑Fi Setup</title>
+  <!-- Minimal, limpio, fácil de integrar con tu CSS global -->
+  <style>
+    :root{ --bg:#0b1020; --text:#e7edff; --muted:#7c8db0; --line:#1e2b4f; --btn:#4c7dff; }
+    html,body{height:100%}
+    body{margin:0; font-family:system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; background:var(--bg); color:var(--text)}
+    .wrap{max-width:760px;margin:0 auto; padding:16px}
+    h1{margin:0 0 8px; font-size:1.2rem}
+    .muted{color:var(--muted); font-size:.95rem}
+    .card{border:1px solid var(--line); border-radius:12px; padding:12px; margin-top:12px; background:#0f1530}
+    .row{display:flex; gap:8px; align-items:center}
+    .row.wrap{flex-wrap:wrap}
+    input,button{font:inherit}
+    input{background:#0c1330; color:var(--text); border:1px solid var(--line); border-radius:10px; padding:10px 12px}
+    button{border:0; border-radius:10px; padding:10px 12px; background:var(--btn); color:#fff; cursor:pointer}
+    button.ghost{background:transparent; border:1px solid var(--line)}
+    .net{display:flex; align-items:center; justify-content:space-between; gap:10px; border:1px solid var(--line); border-radius:10px; padding:10px; margin:8px 0}
+    .ssid{font-weight:600}
+    .status{margin-top:10px; padding:10px; border:1px solid var(--line); border-radius:10px}
+    .list-empty{color:var(--muted); text-align:center; padding:12px}
+  </style>
 </head>
 <body>
-    <div class="container">
-        <h1>Configurar Wi-Fi</h1>
-        <form id="wifi-form">
-            <label for="ssid">Nombre de la Red (SSID)</label>
-            <input type="text" id="ssid" name="ssid" required>
-            <label for="password">Contraseña</label>
-            <input type="password" id="password" name="password" required>
-            <button type="submit">Conectar y Reiniciar</button>
-        </form>
-    </div>
+  <div class="wrap">
+    <header class="row" style="justify-content:space-between">
+      <div>
+        <h1>Configurar Wi‑Fi</h1>
+        <div class="muted">Conecta el dispositivo a tu red</div>
+      </div>
+      <div class="row">
+        <button id="btn-refresh" class="ghost">Actualizar</button>
+      </div>
+    </header>
 
-    <script>
-        document.getElementById('wifi-form').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const form = e.target;
-            const button = form.querySelector('button');
-            const messageDiv = document.getElementById('message');
-            const ssid = form.ssid.value;
-            const password = form.password.value;
+    <section class="card">
+      <div class="row wrap" style="justify-content:space-between; gap:12px">
+        <strong>Redes disponibles</strong>
+        <span id="scan-ind" class="muted">escaneando…</span>
+      </div>
+      <div id="list"></div>
+      <div class="list-empty" id="empty" style="display:none">No se encontraron redes. Intenta de nuevo.</div>
+    </section>
 
-            button.disabled = true;
-            button.textContent = 'Guardando...';
-            messageDiv.textContent = 'Enviando credenciales... reiniciando en breve.';
-            
-            try {
-                const response = await fetch('/app/api/v1/wifi', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ ssid, password })
-                });
+    <section class="card">
+      <strong>Conexión manual</strong>
+      <form id="manual" class="row wrap" style="margin-top:10px">
+        <input id="ssid" name="ssid" placeholder="SSID" required />
+        <input id="password" name="password" type="password" placeholder="Contraseña (si aplica)" />
+        <button type="submit">Conectar</button>
+      </form>
+      <div class="status" id="status">Listo.</div>
+    </section>
+  </div>
 
-                if (!response.ok) {
-                    const error = await response.json();
-                    throw new Error(error.detail || 'Error desconocido');
-                }
-                
-                messageDiv.style.color = '#2f6b31';
-                messageDiv.textContent = '¡Éxito! La el invernadero se está reiniciando para conectarse a tu red.';
+  <script>
+    // ==== Config API (ajusta si usas prefijo en tu backend) ====
+    const API_BASE = '';
 
-            } catch (error) {
-                button.disabled = false;
-                button.textContent = 'Conectar y Reiniciar';
-                messageDiv.style.color = '#ef4444';
-                messageDiv.textContent = `Error: ${error.message}`;
-            }
-        });
-    </script>
+    const $ = s => document.querySelector(s);
+    function setStatus(msg){ $('#status').textContent = msg; }
+
+    async function scan(){
+      $('#scan-ind').style.visibility = 'visible';
+      $('#empty').style.display = 'none';
+      const list = $('#list');
+      list.innerHTML = '';
+      try{
+        const res = await fetch(`${API_BASE}/scan`, {cache:'no-store'});
+        const nets = res.ok ? await res.json() : [];
+        if(!nets.length){ $('#empty').style.display='block'; return; }
+        nets.sort((a,b)=> (b.rssi||-999)-(a.rssi||-999));
+        for(const n of nets){
+          const item = document.createElement('div');
+          item.className = 'net';
+          item.innerHTML = `<div><div class="ssid">${escapeHtml(n.ssid||'(oculta)')}</div><div class="muted">${n.secure?'🔒':'🔓'} · RSSI ${n.rssi??'?'} dBm</div></div>`;
+          const btn = document.createElement('button');
+          btn.textContent = 'Conectar';
+          btn.onclick = ()=> connectFlow(n.ssid, n.secure);
+          item.appendChild(btn);
+          list.appendChild(item);
+        }
+      }catch{
+        $('#empty').style.display='block';
+      }finally{
+        $('#scan-ind').style.visibility = 'hidden';
+      }
+    }
+
+    function escapeHtml(s){return (s+'').replace(/[&<>\"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
+
+    async function connectFlow(ssid, secure){
+      let password = '';
+      if(secure){ password = prompt(`Contraseña para "${ssid}":`) || ''; if(!password){ setStatus('Contraseña vacía.'); return; } }
+      await doConnect({ ssid, password });
+    }
+
+    async function doConnect(payload){
+      try{
+        setStatus('Conectando…');
+        const res = await fetch(`${API_BASE}/connect`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+        const data = await res.json().catch(()=>({}));
+        if(!res.ok){ throw new Error(data.message || 'Error de conexión'); }
+        if(data.status==='ok') setStatus(`✅ Conectado a ${data.ssid||payload.ssid}. IP ${data.ip||'—'}`);
+        else if(data.status==='connecting'){ setStatus('Conectando…'); await pollStatus(); }
+        else setStatus(`❌ ${data.message||'No se pudo conectar'}`);
+      }catch(e){ setStatus('❌ '+ e.message); }
+      finally{ if(payload) payload.password = undefined; }
+    }
+
+    async function pollStatus(){
+      for(let i=0;i<6;i++){
+        await new Promise(r=>setTimeout(r,1200));
+        try{
+          const res = await fetch(`${API_BASE}/status`, {cache:'no-store'});
+          if(!res.ok) continue; const s = await res.json();
+          if(s.connected){ setStatus(`✅ Conectado a ${s.ssid||'la red'}. IP ${s.ip||'—'}`); return; }
+        }catch{}
+      }
+      setStatus('❌ No se pudo confirmar la conexión. Revisa la contraseña.');
+    }
+
+    $('#manual').addEventListener('submit', (ev)=>{
+      ev.preventDefault();
+      const ssid = $('#ssid').value.trim();
+      const password = $('#password').value;
+      if(!ssid){ setStatus('Ingresa un SSID.'); return; }
+      doConnect({ ssid, password });
+    });
+
+    $('#btn-refresh').addEventListener('click', scan);
+
+    // Inicio
+    scan();
+  </script>
 </body>
 </html>
