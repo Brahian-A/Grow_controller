@@ -1,5 +1,6 @@
 import { mount } from "../core/dom.js";
 import { getConfig, putConfig, queryPlant } from "../api/index.js";
+import { toast } from "../ui/Toast.js";
 
 export default async function ConfigView(container){
   const form = document.createElement("form");

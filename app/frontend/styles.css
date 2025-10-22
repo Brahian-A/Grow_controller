@@ -182,3 +182,42 @@ body.menu-open #backdrop { opacity:1; pointer-events:auto; }
 .alert-time { color:#6b7280; font-weight:500; font-size:13px; }
 .alert-status { font-weight:800; }
 .alert-data { font-size:13px; color:#444; }
+
+/* 
+probando toasts, se supone que son menos invasivas y mas modernas que las alertas
+*/
+#toast-wrap {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  z-index: 9999;
+  display: grid;
+  gap: 10px;
+}
+
+.toast {
+  background: #2c3e50;
+  color: #fff;
+  padding: 12px 18px;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+  font-weight: 600;
+  opacity: 0;
+  transform: translateX(100%);
+  transition: all 0.3s ease-in-out;
+}
+
+.toast.in {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+.toast--ok, .toast--info {
+  background: var(--brand); /* Verde */
+}
+.toast--warn {
+  background: #f39c12; /* Naranja */
+}
+.toast--err {
+  background: var(--err); /* Rojo */
+}
