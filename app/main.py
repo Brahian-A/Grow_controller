@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from sqlalchemy import text
 from sqlalchemy.orm import Session
+from app.mqtt_client import start_mqtt_listener
 
 from app.api.deps import get_db
 from app.core.config import config  # noqa
@@ -14,7 +15,7 @@ APP_MODE = (os.getenv("APP_MODE", "NORMAL") or "NORMAL").upper()
 
 # ===== Helpers mínimos para modo CONFIGURATION (nmcli) =====
 def _has_nmcli() -> bool:
-    try:
+    try:    
         subprocess.check_output(["which", "nmcli"])
         return True
     except Exception:
@@ -87,6 +88,9 @@ def create_app() -> FastAPI:
 
     # ---------- NORMAL: API + front principal ----------
     Base.metadata.create_all(bind=engine)  # hasta agregar migraciones
+
+    #inicia el mosquitto 
+    start_mqtt_listener()
 
     app.include_router(lecturas_router,   prefix="/api/v1")
     app.include_router(config_router,     prefix="/api/v1")
