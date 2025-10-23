@@ -34,11 +34,12 @@ def _nmcli_connect(ssid: str, password: str):
         st = subprocess.check_output(
             ["nmcli", "-t", "-f", "NAME,IP4.ADDRESS", "con", "show", "--active"],
             text=True
-        ).strip()
+        ).strip()   
         ip = None
         if st:
             parts = st.split(":")
             ip = parts[1].split("/")[0] if len(parts) > 1 and parts[1] else None
+        subprocess.run(["sudo", "systemctl", "restart", "grow_controller.service"], check=True)
         return {"status": "ok", "ip": ip}
     except subprocess.CalledProcessError:
         return {"status": "error", "message": "No se pudo conectar (clave o alcance)."}
