@@ -93,7 +93,7 @@ export default async function ConfigView(container){
       margen: Number(data.margen),
     };
     await putConfig(payload);
-    alert("Configuración guardada ✅");
+    toast("Configuración guardada ✅");
   });
 
 

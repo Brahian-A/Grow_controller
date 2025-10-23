@@ -1,7 +1,7 @@
 from sqlalchemy import select, desc
 from sqlalchemy.orm import Session
 from typing import Optional, List
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone, timedelta, date, time
 from zoneinfo import ZoneInfo
 import io, csv
 
@@ -130,43 +130,44 @@ def ultimas_lecturas_7d(db: Session, esp_id: str) -> List[Lectura]:
     )
     return db.execute(stmt).scalars().all()
 
-def csv_from(esp_id: str, days: int) -> str:
-    now_utc = datetime.now(timezone.utc)
-    cutoff = now_utc - timedelta(days=days)
-    db = SessionLocal()
-    try:
-        d = db.query(Dispositivo).filter_by(esp_id=esp_id).first()
-        if not d:
-            rows = []
-        else:
-            stmt = (
-                select(
-                    Lectura.fecha_hora,
-                    Lectura.temperatura,
-                    Lectura.humedad_suelo,
-                    Lectura.humedad,
-                )
-                .where(
-                    Lectura.device_id == d.id,
-                    Lectura.fecha_hora >= cutoff,
-                    Lectura.fecha_hora <= now_utc,
-                )
-                .order_by(desc(Lectura.fecha_hora))
+def csv_from_range(desde: str, hasta: str) -> str:
+    tz_local = ZoneInfo("America/Montevideo")
+    d0 = datetime.strptime(desde, "%Y-%m-%d").date()
+    d1 = datetime.strptime(hasta, "%Y-%m-%d").date()
+    if d0 > d1:
+        raise ValueError("La fecha 'desde' no puede ser posterior a 'hasta'.")
+
+    start_local = datetime.combine(d0, time.min).replace(tzinfo=tz_local)
+    end_local   = datetime.combine(d1, time.max).replace(tzinfo=tz_local)
+    start_utc = start_local.astimezone(timezone.utc)
+    end_utc   = end_local.astimezone(timezone.utc)
+
+    with _with_session() as db:
+        stmt = (
+            select(
+                Lectura.fecha_hora,
+                Lectura.temperatura,
+                Lectura.humedad_suelo,
+                Lectura.humedad,
             )
-            rows = db.execute(stmt).all()
-    finally:
-        db.close()
+            .where(Lectura.fecha_hora >= start_utc, Lectura.fecha_hora <= end_utc)
+            .order_by(desc(Lectura.fecha_hora))
+        )
+        rows = db.execute(stmt).all()
 
     buf = io.StringIO()
-    writer = csv.writer(buf)
+    writer = csv.writer(buf, lineterminator="\n")
     writer.writerow(["fecha_hora", "temperatura", "humedad_suelo", "humedad"])
 
-    tz = ZoneInfo("America/Montevideo")
     for dt, temperatura, humedad_suelo, humedad in rows:
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=timezone.utc)
-        dt_local = dt.astimezone(tz).isoformat()
-        writer.writerow([dt_local, f"{temperatura:.1f} °C", f"{humedad_suelo:.1f} %", f"{humedad:.1f} %"])
+        dt_str = dt.astimezone(tz_local).strftime("%Y-%m-%d %H:%M:%S")
+        temp_str = f"{float(temperatura):.1f} °C"
+        soil_str = f"{float(humedad_suelo):.1f} %"
+        hum_str  = f"{float(humedad):.1f} %"
+        writer.writerow([dt_str, temp_str, soil_str, hum_str])
+
     return buf.getvalue()
 
 # ----------------- Gemini

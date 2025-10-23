@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_db, resolve_esp_id
 from app.schemas.lecturas import LecturaIn, LecturaOut
 from app.servicios.funciones import (
-    agregar_lectura, ultima_lectura, ultimas_lecturas_7d, csv_from
+    agregar_lectura, ultima_lectura, ultimas_lecturas_7d, csv_from_range
 )
 
 router = APIRouter(prefix="/lecturas", tags=["lecturas"])
@@ -32,14 +32,14 @@ def get_ultimas(esp_id: str = Depends(resolve_esp_id), db: Session = Depends(get
 
 @router.get("/csv")
 def get_csv(
-    days: int = Query(..., ge=1, le=365),
+    desde: str = Query(..., description="YYYY-MM-DD"),
+    hasta: str = Query(..., description="YYYY-MM-DD"),
     esp_id: str = Depends(resolve_esp_id),
-    db: Session = Depends(get_db)
 ):
-    """Genera CSV de lecturas para esp_id."""
+    """Genera CSV de lecturas para esp_id entre fechas [desde, hasta] (hora local)."""
     try:
-        csv_text = csv_from(esp_id, days)
-        filename = f"{esp_id}_ultimos_{days}_dias_{datetime.now().date().isoformat()}.csv"
+        csv_text = csv_from_range(desde, hasta)  # ← ahora sí
+        filename = f"{esp_id}_{desde}_a_{hasta}.csv"
         return StreamingResponse(
             iter([csv_text]),
             media_type="text/csv",
