@@ -4,11 +4,21 @@ import { drawLine } from "../ui/Chart.js";
 
 export default function HistoryView(container){
   const wrap = document.createElement("div");
-  wrap.className = "cards";
+  wrap.className = "HistoryView";
   wrap.innerHTML = `
+    <div class= "Graficas">
     <section class="card"><h3>Temperatura (24)</h3><canvas id="c1" width="360" height="120"></canvas></section>
     <section class="card"><h3>Humedad (24)</h3><canvas id="c2" width="360" height="120"></canvas></section>
     <section class="card"><h3>Suelo (24)</h3><canvas id="c3" width="360" height="120"></canvas></section>
+    </div>
+
+    <section class="card date-filter">
+      <h3>Filtrar por Rango de Fechas</h3>
+      <div class="controls">
+        <input type="text" id="rango-fechas" placeholder="Selecciona un rango...">
+        <button id="btn-exportar-csv">Exportar CSV</button>
+      </div>
+    </section>
   `;
   mount(container, wrap);
 

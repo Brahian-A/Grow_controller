@@ -213,11 +213,12 @@ probando toasts, se supone que son menos invasivas y mas modernas que las alerta
 }
 
 .toast--ok, .toast--info {
-  background: var(--brand); /* Verde */
+  background: var(--brand);
 }
 .toast--warn {
-  background: #f39c12; /* Naranja */
+  background: #f39c12;
 }
 .toast--err {
-  background: var(--err); /* Rojo */
+  background: var(--err);
 }
+
