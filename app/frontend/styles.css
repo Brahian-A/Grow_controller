@@ -222,3 +222,30 @@ probando toasts, se supone que son menos invasivas y mas modernas que las alerta
   background: var(--err);
 }
 
+/* --- ON/OFF y tamaño de títulos en Actuadores --- */
+.a-card .a-title{
+  font-size: 20px;
+  font-weight: 800;
+}
+.a-card .a-status{
+  font-size: 12px;
+  font-weight: 800;
+  opacity: .8;
+  margin-top: -2px;
+}
+.a-card .a-status.is-on{
+  color: var(--brand);
+}
+/* Actuadores: OFF rojo, ON verde (IDs = máxima especificidad) */
+.actions-grid #card-luces,
+.actions-grid #card-vent,
+.actions-grid #card-riego{
+  background:#fde8e8 !important;
+  border-color:#f5b5b5 !important;
+}
+.actions-grid #card-luces.active,
+.actions-grid #card-vent.active,
+.actions-grid #card-riego.active{
+  background:#e8f7e9 !important;
+  border-color:#bfe3c3 !important;
+}
