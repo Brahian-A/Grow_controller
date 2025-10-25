@@ -131,23 +131,14 @@ def ultimas_lecturas_7d(db: Session, esp_id: str) -> List[Lectura]:
     )
     return db.execute(stmt).scalars().all()
 
-# Nota: Esta función requiere _with_session que no está definida aquí,
-# asumo que es un helper definido en otra parte.
+def csv_from_range(db: Session, esp_id: str, desde: str, hasta: str) -> str:
+    d = db.query(Dispositivo).filter_by(esp_id=esp_id).first()
+    if not d:
+        buf = io.StringIO()
+        writer = csv.writer(buf, lineterminator="\n")
+        writer.writerow(["fecha_hora", "temperatura", "humedad_suelo", "humedad"])
+        return buf.getvalue()
 
-def _with_session():
-    # Helper context manager simulado para el ejemplo
-    class SessionManager:
-        def __enter__(self):
-            self.session = SessionLocal()
-            return self.session
-        def __exit__(self, exc_type, exc_val, exc_tb):
-            if exc_type is not None:
-                self.session.rollback()
-            self.session.close()
-    return SessionManager()
-
-
-def csv_from_range(desde: str, hasta: str) -> str:
     tz_local = ZoneInfo("America/Montevideo")
     d0 = datetime.strptime(desde, "%Y-%m-%d").date()
     d1 = datetime.strptime(hasta, "%Y-%m-%d").date()
@@ -156,21 +147,25 @@ def csv_from_range(desde: str, hasta: str) -> str:
 
     start_local = datetime.combine(d0, time.min).replace(tzinfo=tz_local)
     end_local   = datetime.combine(d1, time.max).replace(tzinfo=tz_local)
+
     start_utc = start_local.astimezone(timezone.utc)
     end_utc   = end_local.astimezone(timezone.utc)
 
-    with _with_session() as db:
-        stmt = (
-            select(
-                Lectura.fecha_hora,
-                Lectura.temperatura,
-                Lectura.humedad_suelo,
-                Lectura.humedad,
-            )
-            .where(Lectura.fecha_hora >= start_utc, Lectura.fecha_hora <= end_utc)
-            .order_by(desc(Lectura.fecha_hora))
+    stmt = (
+        select(
+            Lectura.fecha_hora,
+            Lectura.temperatura,
+            Lectura.humedad_suelo,
+            Lectura.humedad,
         )
-        rows = db.execute(stmt).all()
+        .where(
+            Lectura.device_id == d.id,
+            Lectura.fecha_hora >= start_utc,
+            Lectura.fecha_hora <= end_utc,
+        )
+        .order_by(desc(Lectura.fecha_hora))
+    )
+    rows = db.execute(stmt).all()
 
     buf = io.StringIO()
     writer = csv.writer(buf, lineterminator="\n")
@@ -179,11 +174,13 @@ def csv_from_range(desde: str, hasta: str) -> str:
     for dt, temperatura, humedad_suelo, humedad in rows:
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=timezone.utc)
-        dt_str = dt.astimezone(tz_local).strftime("%Y-%m-%d %H:%M:%S")
+        dt_local = dt.astimezone(tz_local).strftime("%Y-%m-%d %H:%M:%S")
+
         temp_str = f"{float(temperatura):.1f} °C"
         soil_str = f"{float(humedad_suelo):.1f} %"
         hum_str  = f"{float(humedad):.1f} %"
-        writer.writerow([dt_str, temp_str, soil_str, hum_str])
+
+        writer.writerow([dt_local, temp_str, soil_str, hum_str])
 
     return buf.getvalue()
 

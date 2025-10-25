@@ -34,16 +34,21 @@ def get_ultimas(esp_id: str = Depends(resolve_esp_id), db: Session = Depends(get
 def get_csv(
     desde: str = Query(..., description="YYYY-MM-DD"),
     hasta: str = Query(..., description="YYYY-MM-DD"),
-    esp_id: str = Depends(resolve_esp_id),
+    esp_id: str = Query(..., description="ID del dispositivo"),
+    db: Session = Depends(get_db),
 ):
     """Genera CSV de lecturas para esp_id entre fechas [desde, hasta] (hora local)."""
     try:
-        csv_text = csv_from_range(desde, hasta)  # ← ahora sí
+        csv_text = csv_from_range(db, esp_id, desde, hasta)
+
         filename = f"{esp_id}_{desde}_a_{hasta}.csv"
         return StreamingResponse(
             iter([csv_text]),
             media_type="text/csv",
-            headers={"Content-Disposition": f'attachment; filename=\"{filename}\"'}
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'}
         )
+    except ValueError as e:
+        # fechas inválidas, rango al revés, etc → 400
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"No se pudo generar el CSV: {e}")
