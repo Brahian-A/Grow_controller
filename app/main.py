@@ -16,8 +16,8 @@ APP_MODE = (os.getenv("APP_MODE", "NORMAL") or "NORMAL").upper()
 # ===== Helper para modo CONFIGURATION (Método wpa_supplicant) =====
 def _write_wifi_credentials(ssid: str, password: str):
     """
-    Escribe las credenciales directamente en wpa_supplicant.conf
-    y reinicia el servicio para reconectar.
+    Escribe las credenciales, detiene el hotspot,
+    fuerza la reconexión de wpa_supplicant y reinicia el servicio.
     """
     try:
         # Formatea el bloque de configuración de red
@@ -28,21 +28,40 @@ network={{
     key_mgmt=WPA-PSK
 }}
 """
-        # Añade la configuración al archivo. 
-        # 'a' significa 'append' (agregar al final)
+        # 1. Escribir las nuevas credenciales
         with open("/etc/wpa_supplicant/wpa_supplicant.conf", "a") as f:
             f.write(network_config)
 
-        # Forzamos el reinicio del servicio para que 
-        # el script start.sh se vuelva a ejecutar y entre en modo NORMAL.
-        # Esto funciona porque la app corre como root.
+        # 2. Detener los servicios del hotspot INMEDIATAMENTE
+        # (check=False para que no falle si ya estaban detenidos)
+        print("[WIFI_CONFIG] Deteniendo servicios de hotspot...")
+        subprocess.run(["killall", "hostapd"], check=False)
+        subprocess.run(["systemctl", "stop", "dnsmasq"], check=False)
+
+        # 3. Forzar a wpa_supplicant a releer el archivo y conectarse
+        # ESTA ES LA PIEZA CLAVE QUE FALTABA
+        print("[WIFI_CONFIG] Forzando reconexión de wpa_supplicant...")
+        subprocess.run(["wpa_cli", "-i", "wlan0", "reconfigure"], check=True)
+        
+        # 4. Darle 10 segundos para que intente establecer la conexión
+        print("[WIFI_CONFIG] Esperando 10s para que se establezca la conexión...")
+        time.sleep(10) 
+        
+        # 5. Reiniciar el servicio. 
+        # El start.sh ahora verá la IP y entrará en modo NORMAL.
+        print("[WIFI_CONFIG] Reiniciando servicio grow_controller...")
         subprocess.run(["systemctl", "restart", "grow_controller.service"], check=True)
         
         return {"status": "ok"}
     
     except FileNotFoundError:
         raise HTTPException(status_code=500, detail="No se encontró /etc/wpa_supplicant/wpa_supplicant.conf")
+    except subprocess.CalledProcessError as e:
+        # Esto es clave: si 'wpa_cli' falla, lo sabremos.
+        print(f"Error en subprocess: {e}")
+        raise HTTPException(status_code=500, detail=f"Error al ejecutar comando del sistema: {e}")
     except Exception as e:
+        print(f"Error inesperado: {e}")
         raise HTTPException(status_code=500, detail=f"No se pudo escribir la configuración: {e}")
 
 # ===== Imports sólo si estamos en NORMAL =====
