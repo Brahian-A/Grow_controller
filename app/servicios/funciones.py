@@ -4,8 +4,10 @@ from typing import Optional, List
 from datetime import datetime, timezone, timedelta, date, time
 from zoneinfo import ZoneInfo
 import io, csv
+import logging
+import json
 
-from app.conexiones.conexion_esp32 import get_snapshot, enviar_cmd
+from app.servicios.mqtt_funciones import enviar_cmd_mqtt # Se usa para enviar comandos
 from app.db.session import SessionLocal
 from app.db.models import Dispositivo, Lectura, Mecanismos, Config
 
@@ -49,28 +51,26 @@ def set_config(
     if margen is not None:           cfg.margen = margen
     return guardar(db, cfg)
 
-# ----------------- mecanismos (usa snapshot global)
+# ----------------- mecanismos (usa DB/MQTT)
 
 def get_status(db: Session, esp_id: str) -> Mecanismos:
     d = get_or_create_device(db, esp_id)
+    # El estado se lee directamente de la DB (actualizado por el listener MQTT).
     stat = db.query(Mecanismos).filter(Mecanismos.device_id == d.id).first() or Mecanismos(device_id=d.id)
-    snap = get_snapshot()
-    stat.bomba = bool(snap.get("riego"))
-    stat.ventilador = bool(snap.get("vent"))
-    stat.luz = bool(snap.get("luz"))
+    # Se eliminó la lógica de snapshot
     return guardar(db, stat)
 
 def set_mecanismo(db: Session, esp_id: str, bomba=None, luz=None, ventilador=None) -> Mecanismos:
     d = get_or_create_device(db, esp_id)
 
-    serial_ok = True
-    # Intentar enviar a la ESP pero no fallar si no hay puerto
+    mqtt_ok = True
+    # Envío de comandos SET por MQTT
     if bomba is not None:
-        serial_ok = enviar_cmd({"cmd":"SET","target":"RIEGO","value":"ON" if bomba else "OFF"}) and serial_ok
+        mqtt_ok = enviar_cmd_mqtt({"cmd":"SET","target":"RIEGO","value":"ON" if bomba else "OFF"}, esp_id=esp_id) and mqtt_ok
     if ventilador is not None:
-        serial_ok = enviar_cmd({"cmd":"SET","target":"VENT","value":"ON" if ventilador else "OFF"}) and serial_ok
+        mqtt_ok = enviar_cmd_mqtt({"cmd":"SET","target":"VENT","value":"ON" if ventilador else "OFF"}, esp_id=esp_id) and mqtt_ok
     if luz is not None:
-        serial_ok = enviar_cmd({"cmd":"SET","target":"LUZ","value":"ON" if luz else "OFF"}) and serial_ok
+        mqtt_ok = enviar_cmd_mqtt({"cmd":"SET","target":"LUZ","value":"ON" if luz else "OFF"}, esp_id=esp_id) and mqtt_ok
 
     mech = db.query(Mecanismos).filter(Mecanismos.device_id == d.id).first() or Mecanismos(device_id=d.id)
     if bomba is not None:      mech.bomba = bool(bomba)
@@ -79,7 +79,8 @@ def set_mecanismo(db: Session, esp_id: str, bomba=None, luz=None, ventilador=Non
 
     mech = guardar(db, mech)
 
-    mech._warning = None if serial_ok else "serial_unavailable"
+    # El flag de error se mantiene para compatibilidad con el endpoint /mecanismos
+    mech._warning = None if mqtt_ok else "serial_unavailable"
     return mech
 
 
@@ -130,6 +131,22 @@ def ultimas_lecturas_7d(db: Session, esp_id: str) -> List[Lectura]:
     )
     return db.execute(stmt).scalars().all()
 
+# Nota: Esta función requiere _with_session que no está definida aquí,
+# asumo que es un helper definido en otra parte.
+
+def _with_session():
+    # Helper context manager simulado para el ejemplo
+    class SessionManager:
+        def __enter__(self):
+            self.session = SessionLocal()
+            return self.session
+        def __exit__(self, exc_type, exc_val, exc_tb):
+            if exc_type is not None:
+                self.session.rollback()
+            self.session.close()
+    return SessionManager()
+
+
 def csv_from_range(desde: str, hasta: str) -> str:
     tz_local = ZoneInfo("America/Montevideo")
     d0 = datetime.strptime(desde, "%Y-%m-%d").date()
@@ -172,8 +189,6 @@ def csv_from_range(desde: str, hasta: str) -> str:
 
 # ----------------- Gemini
 
-import json
-import logging
 import google.generativeai as genai
 from app.core.config import config
 

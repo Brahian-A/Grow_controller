@@ -1,36 +1,52 @@
-from fastapi import APIRouter, HTTPException, Query
-from app.conexiones.conexion_esp32 import get_snapshot, enviar_cmd
+from fastapi import APIRouter, Depends, HTTPException, status
+from app.api.deps import resolve_esp_id
+from app.servicios.mqtt_funciones import enviar_cmd_mqtt
 
-router = APIRouter(prefix="/system", tags=["Sistema"])
+router = APIRouter(prefix="/system", tags=["system"])
 
-@router.get("/snapshot")
-def snapshot(esp_id: str | None = Query(None)):
-    "return a live snapshot of ESP32 state and last data received (optionally by esp_id)"
-    try:
-        return get_snapshot(esp_id) if esp_id is not None else get_snapshot()
-    except TypeError:
-        return get_snapshot()
-
-@router.post("/mecanismos/{target}/{value}")
-def set_mecanismo(
+@router.put("/mecanismos/{target}/{value}")
+def set_mechanism_direct(
     target: str,
     value: str,
-    esp_id: str | None = Query(None)
+    esp_id: str = Depends(resolve_esp_id)
 ):
-    "send a SET command to the ESP32 for RIEGO/VENT/LUZ with ON/OFF (optionally by esp_id)"
+    """
+    Establece el estado de un mecanismo directamente (e.g., /system/mecanismos/LUZ/ON).
+    """
     target = target.upper()
     value = value.upper()
-    if target not in ("RIEGO", "VENT", "LUZ") or value not in ("ON", "OFF"):
-        raise HTTPException(status_code=400, detail="target/value inválidos")
+
+    if target not in ["RIEGO", "VENT", "LUZ"]:
+        raise HTTPException(status_code=400, detail="Target inválido.")
+
+    if value not in ["ON", "OFF"]:
+        raise HTTPException(status_code=400, detail="Value inválido (debe ser ON o OFF).")
+
     cmd = {"cmd": "SET", "target": target, "value": value}
-    if esp_id: cmd["esp_id"] = esp_id
-    enviar_cmd(cmd)
-    return {"ok": True}
+    
+    if not enviar_cmd_mqtt(cmd, esp_id=esp_id):
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="ESP32 no disponible (MQTT no pudo publicar el comando)")
+    
+    return {"message": f"Comando SET {target}={value} enviado a {esp_id} por MQTT."}
 
 @router.post("/status")
-def pedir_status(esp_id: str | None = Query(None)):
-    "request a STATUS update from the ESP32 (optionally by esp_id)"
+def request_status_update(esp_id: str = Depends(resolve_esp_id)):
+    """
+    Solicita al ESP32 que envíe su estado (telemetría) inmediatamente.
+    """
     cmd = {"cmd": "STATUS"}
-    if esp_id: cmd["esp_id"] = esp_id
-    enviar_cmd(cmd)
-    return {"ok": True}
+    if not enviar_cmd_mqtt(cmd, esp_id=esp_id):
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="ESP32 no disponible (MQTT no pudo publicar el comando)")
+    
+    return {"message": f"Comando STATUS enviado a {esp_id} por MQTT. Esperando telemetría..."}
+
+@router.post("/reboot")
+def reboot_esp32(esp_id: str = Depends(resolve_esp_id)):
+    """
+    Envía el comando de reinicio al ESP32.
+    """
+    cmd = {"cmd": "REBOOT"}
+    if not enviar_cmd_mqtt(cmd, esp_id=esp_id):
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="ESP32 no disponible (MQTT no pudo publicar el comando)")
+    
+    return {"message": f"Comando REBOOT enviado a {esp_id} por MQTT."}

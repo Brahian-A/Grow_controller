@@ -68,7 +68,6 @@ if APP_MODE == "NORMAL":
     from app.api.v1.system import router as system_router  # noqa
     from app.api.v1.devices import router as devices_router  # noqa
     from app.api.v1.gemini import router as gemini_router
-    from app.conexiones.conexion_esp32 import iniciar_lector  # noqa
 
 
 def create_app() -> FastAPI:
@@ -130,13 +129,6 @@ def create_app() -> FastAPI:
     frontend_dir = Path(__file__).parent / "frontend"
     frontend_dir.mkdir(parents=True, exist_ok=True)
     app.mount("/", StaticFiles(directory=frontend_dir, html=True), name="frontend")
-
-    @app.on_event("startup")
-    def _startup():
-        try:
-            iniciar_lector()
-        except Exception as e:
-            print(f"[WARN] iniciar_lector(): {e}")
 
     return app
 
