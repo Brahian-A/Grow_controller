@@ -240,8 +240,8 @@ probando toasts, se supone que son menos invasivas y mas modernas que las alerta
 .actions-grid #card-luces,
 .actions-grid #card-vent,
 .actions-grid #card-riego{
-  background:#fde8e8 !important;
-  border-color:#f5b5b5 !important;
+  background:#fecaca !important;   /* más intenso */
+  border-color:#fca5a5 !important;
 }
 .actions-grid #card-luces.active,
 .actions-grid #card-vent.active,
