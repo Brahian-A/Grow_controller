@@ -222,3 +222,36 @@ probando toasts, se supone que son menos invasivas y mas modernas que las alerta
   background: var(--err);
 }
 
+/* Sidebar oculto accesible */
+.sidebar[hidden] {
+  display: none;
+}
+
+/* Para el calendario (flatpickr) asegurate que no quede detrás */
+.flatpickr-calendar {
+  z-index: 9999;
+}
+
+/* Asegurar blancos de toque */
+button,
+.topbar button,
+#btn-exportar-csv,
+#device-select,
+input[type="text"],
+input[type="date"] {
+  min-height: 44px;
+  min-width: 44px;
+  font-size: 16px;
+}
+
+/* Texto solo para lectores de pantalla */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0,0,0,0);
+  border: 0;
+}

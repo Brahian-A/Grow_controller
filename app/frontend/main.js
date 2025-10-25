@@ -7,6 +7,7 @@ import ConfigView from "./views/ConfigView.js";
 import { fetchDevices } from "./store/devices.js";
 import { getActiveEsp, setActiveEsp } from "./store/devices.js";
 import { addDevice } from "./api/index.js";
+import { toast } from "./ui/Toast.js";
 
 function toggleMenu(){ document.body.classList.toggle('menu-open'); }
 function closeMenu(){ document.body.classList.remove('menu-open'); }
@@ -41,7 +42,6 @@ async function initDevicesUI(){
     setActiveEsp(sel.value);
   });
 
-  // agregar dispositivo
   btnAdd.addEventListener("click", async () => {
     const esp_id = prompt("ESP ID (ej: esp32s3-ABC123):");
     if (!esp_id) return;
@@ -55,7 +55,7 @@ async function initDevicesUI(){
       sel.value = res.esp_id;
       setActiveEsp(res.esp_id);
     } else {
-      alert("No se pudo crear el dispositivo (quizás ya existe).");
+      toast("No se pudo crear el dispositivo (quizás ya existe).");
     }
   });
 }
