@@ -50,7 +50,7 @@ network={{
         # 5. Reiniciar el servicio. 
         # El start.sh ahora verá la IP y entrará en modo NORMAL.
         print("[WIFI_CONFIG] Reiniciando servicio grow_controller...")
-        subprocess.run(["systemctl", "restart", "grow_controller.service"], check=True)
+        subprocess.run(["reboot"], check=True)
         
         return {"status": "ok"}
     
