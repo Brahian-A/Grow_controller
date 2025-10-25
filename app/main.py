@@ -13,36 +13,37 @@ from app.core.config import config  # noqa
 
 APP_MODE = (os.getenv("APP_MODE", "NORMAL") or "NORMAL").upper()
 
-# ===== Helpers mínimos para modo CONFIGURATION (nmcli) =====
-def _has_nmcli() -> bool:
-    try:    
-        subprocess.check_output(["which", "nmcli"])
-        return True
-    except Exception:
-        return False
-
-def _nmcli_connect(ssid: str, password: str):
-    if not _has_nmcli():
-        raise HTTPException(status_code=500, detail="nmcli no disponible")
+# ===== Helper para modo CONFIGURATION (Método wpa_supplicant) =====
+def _write_wifi_credentials(ssid: str, password: str):
+    """
+    Escribe las credenciales directamente en wpa_supplicant.conf
+    y reinicia el servicio para reconectar.
+    """
     try:
-        cmd = ["nmcli", "dev", "wifi", "connect", ssid]
-        if password:
-            cmd += ["password", password]
-        subprocess.run(cmd, check=True)
-        time.sleep(2)
-        # Lee IP actual (si ya tomó DHCP)
-        st = subprocess.check_output(
-            ["nmcli", "-t", "-f", "NAME,IP4.ADDRESS", "con", "show", "--active"],
-            text=True
-        ).strip()   
-        ip = None
-        if st:
-            parts = st.split(":")
-            ip = parts[1].split("/")[0] if len(parts) > 1 and parts[1] else None
-        subprocess.run(["sudo", "systemctl", "restart", "grow_controller.service"], check=True)
-        return {"status": "ok", "ip": ip}
-    except subprocess.CalledProcessError:
-        return {"status": "error", "message": "No se pudo conectar (clave o alcance)."}
+        # Formatea el bloque de configuración de red
+        network_config = f"""
+network={{
+    ssid="{ssid}"
+    psk="{password}"
+    key_mgmt=WPA-PSK
+}}
+"""
+        # Añade la configuración al archivo. 
+        # 'a' significa 'append' (agregar al final)
+        with open("/etc/wpa_supplicant/wpa_supplicant.conf", "a") as f:
+            f.write(network_config)
+
+        # Forzamos el reinicio del servicio para que 
+        # el script start.sh se vuelva a ejecutar y entre en modo NORMAL.
+        # Esto funciona porque la app corre como root.
+        subprocess.run(["systemctl", "restart", "grow_controller.service"], check=True)
+        
+        return {"status": "ok"}
+    
+    except FileNotFoundError:
+        raise HTTPException(status_code=500, detail="No se encontró /etc/wpa_supplicant/wpa_supplicant.conf")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"No se pudo escribir la configuración: {e}")
 
 # ===== Imports sólo si estamos en NORMAL =====
 if APP_MODE == "NORMAL":
@@ -78,9 +79,14 @@ def create_app() -> FastAPI:
             password = payload.get("password") or ""
             if not ssid:
                 raise HTTPException(status_code=400, detail="Nombre (SSID) requerido.")
-            res = _nmcli_connect(ssid, password)
+            
+            # --- ¡AQUÍ USAMOS LA NUEVA FUNCIÓN! ---
+            res = _write_wifi_credentials(ssid, password)
+            
             if res.get("status") == "ok":
-                return {"status": "ok", "message": "Conectado. Reinicia para modo NORMAL.", "ip": res.get("ip")}
+                # El reinicio ya lo maneja la función _write_wifi_credentials
+                return {"status": "ok", "message": "Configuración guardada. Reiniciando para conectar..."}
+            
             raise HTTPException(status_code=500, detail=res.get("message", "Error de conexión"))
 
         # Monta el front DESPUÉS de definir el endpoint
@@ -106,7 +112,7 @@ def create_app() -> FastAPI:
             db.execute(text("SELECT 1"))
             return {"status": "healthy", "database": "connected"}
         except Exception as e:
-            raise HTTPException(status_code=503, detail=f"Database error: {e}")
+           raise HTTPException(status_code=503, detail=f"Database error: {e}")
 
     frontend_dir = Path(__file__).parent / "frontend"
     frontend_dir.mkdir(parents=True, exist_ok=True)
