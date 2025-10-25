@@ -38,6 +38,9 @@ network={{
         subprocess.run(["killall", "hostapd"], check=False)
         subprocess.run(["systemctl", "stop", "dnsmasq"], check=False)
         
+        print("[WIFI_CONFIG] Devolviendo control de wlan0 a NetworkManager...")
+        subprocess.run(["rm", "/etc/NetworkManager/conf.d/99-unmanaged-devices.conf"], check=False)
+        
         # 5. Reiniciar el servicio. 
         # El start.sh ahora verá la IP y entrará en modo NORMAL.
         print("[WIFI_CONFIG] Reiniciando servicio grow_controller...")

@@ -3,6 +3,7 @@ set -e
 sleep 8
 
 IP_WLAN=$(ip -4 addr show dev wlan0 | awk '/inet /{print $2}' | cut -d/ -f1 || true)
+UNMANAGE_FILE="/etc/NetworkManager/conf.d/99-unmanaged-devices.conf"
 
 # Limpieza (como root, no necesitamos sudo)
 killall hostapd 2>/dev/null || true
@@ -11,6 +12,15 @@ systemctl stop dnsmasq 2>/dev/null || true
 if [ -z "$IP_WLAN" ];
 then
   echo "[start] Sin IP en wlan0. Lanzando hotspot con hostapd."
+
+  echo "[start] Bloqueando NetworkManager en wlan0..."
+  echo -e "[keyfile]\nunmanaged-devices=interface-name:wlan0" > $UNMANAGE_FILE
+
+  systemctl restart NetworkManager
+  sleep 2
+
+  killall hostapd 2>/dev/null || true
+  systemctl stop dnsmasq 2>/dev/null || true
 
   # 1. Asignamos una IP estática a wlan0
   ip addr flush dev wlan0
