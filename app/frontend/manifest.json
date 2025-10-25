@@ -1,0 +1,21 @@
+{
+  "short_name": "GrowController",
+  "name": "Grow Controller",
+  "icons": [
+    {
+      "src": "/assets/img/GrowController192.png",
+      "type": "image/png",
+      "sizes": "192x192"
+    },
+    {
+      "src": "/assets/img/GrowController512.png",
+      "type": "image/png",
+      "sizes": "512x512"
+    }
+  ],
+  "start_url": "/",
+  "display": "standalone",
+  "scope": "/",
+  "background_color": "#eef5ef",
+  "theme_color": "#2f6b31"
+}
