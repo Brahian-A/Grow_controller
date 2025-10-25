@@ -37,15 +37,6 @@ network={{
         print("[WIFI_CONFIG] Deteniendo servicios de hotspot...")
         subprocess.run(["killall", "hostapd"], check=False)
         subprocess.run(["systemctl", "stop", "dnsmasq"], check=False)
-
-        # 3. Forzar a wpa_supplicant a releer el archivo y conectarse
-        # ESTA ES LA PIEZA CLAVE QUE FALTABA
-        print("[WIFI_CONFIG] Forzando reconexión de wpa_supplicant...")
-        subprocess.run(["wpa_cli", "-i", "wlan0", "reconfigure"], check=True)
-        
-        # 4. Darle 10 segundos para que intente establecer la conexión
-        print("[WIFI_CONFIG] Esperando 10s para que se establezca la conexión...")
-        time.sleep(10) 
         
         # 5. Reiniciar el servicio. 
         # El start.sh ahora verá la IP y entrará en modo NORMAL.
