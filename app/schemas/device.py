@@ -1,5 +1,6 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict, field_serializer
 from typing import Optional
+from datetime import datetime
 
 class DeviceIn(BaseModel):
     esp_id: str = Field(..., min_length=1, max_length=64)
@@ -14,4 +15,6 @@ class DeviceOut(BaseModel):
     esp_id: str
     nombre: Optional[str]
     activo: bool
-    ultimo_contacto: Optional[str] = None
+    ultimo_contacto: Optional[datetime] = None
+
+    model_config = ConfigDict(from_attributes=True)
