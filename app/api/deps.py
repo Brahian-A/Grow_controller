@@ -4,7 +4,7 @@ from typing import Optional
 import os
 
 from app.db.session import SessionLocal
-from app.db.models import Dispositivo, Mecanismos, Config
+from app.db.models import Device, Mecanismos, Config
 
 # ---- Sesión
 def get_db():
@@ -26,10 +26,10 @@ def resolve_esp_id(
     if env_uid:
         return env_uid
 
-    count = db.query(Dispositivo).count()
+    count = db.query(Device).count()
 
     if count == 0:
-        d = Dispositivo(esp_id="default-esp")
+        d = Device(esp_id="default-esp")
         db.add(d); db.commit(); db.refresh(d)
         db.add(Mecanismos(device_id=d.id))
         db.add(Config(device_id=d.id))
@@ -37,7 +37,7 @@ def resolve_esp_id(
         return d.esp_id
 
     if count == 1:
-        return db.query(Dispositivo).first().esp_id
+        return db.query(Device).first().esp_id
 
     raise HTTPException(
         status_code=422,

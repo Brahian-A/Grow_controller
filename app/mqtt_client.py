@@ -7,7 +7,7 @@ import paho.mqtt.client as mqtt
 from sqlalchemy.orm import Session
 
 from app.db.session import SessionLocal
-from app.db.models import Lectura, Dispositivo, Mecanismos
+from app.db.models import Lectura, Device, Mecanismos
 from app.servicios.funciones import agregar_lectura
 from app.servicios.mqtt_funciones import setup_mqtt_client
 from app.servicios.umbrales import procesar_umbrales

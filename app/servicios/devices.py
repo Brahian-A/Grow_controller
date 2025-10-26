@@ -1,9 +1,9 @@
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
-from app.db.models import Dispositivo, Mecanismos, Config
+from app.db.models import Device, Mecanismos, Config
 
-def create_device(db: Session, esp_id: str, nombre: str | None = None) -> Dispositivo:
-    d = Dispositivo(esp_id=esp_id, nombre=nombre)
+def create_device(db: Session, esp_id: str, nombre: str | None = None) -> Device:
+    d = Device(esp_id=esp_id, nombre=nombre)
     db.add(d)
     try:
         db.commit()
@@ -18,13 +18,13 @@ def create_device(db: Session, esp_id: str, nombre: str | None = None) -> Dispos
     db.refresh(d)
     return d
 
-def list_devices(db: Session) -> list[Dispositivo]:
-    return db.query(Dispositivo).order_by(Dispositivo.id.asc()).all()
+def list_devices(db: Session) -> list[Device]:
+    return db.query(Device).order_by(Device.id.asc()).all()
 
-def get_device_by_esp_id(db: Session, esp_id: str) -> Dispositivo | None:
-    return db.query(Dispositivo).filter(Dispositivo.esp_id == esp_id).first()
+def get_device_by_esp_id(db: Session, esp_id: str) -> Device | None:
+    return db.query(Device).filter(Device.esp_id == esp_id).first()
 
-def update_device(db: Session, esp_id: str, nombre: str | None = None, activo: bool | None = None) -> Dispositivo:
+def update_device(db: Session, esp_id: str, nombre: str | None = None, activo: bool | None = None) -> Device:
     d = get_device_by_esp_id(db, esp_id)
     if not d:
         raise LookupError("Dispositivo no encontrado")

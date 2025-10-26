@@ -9,7 +9,7 @@ import json
 
 from app.servicios.mqtt_funciones import enviar_cmd_mqtt # Se usa para enviar comandos
 from app.db.session import SessionLocal
-from app.db.models import Dispositivo, Lectura, Mecanismos, Config
+from app.db.models import Device, Lectura, Mecanismos, Config
 
 def guardar(db: Session, obj):
     db.add(obj)
@@ -17,10 +17,10 @@ def guardar(db: Session, obj):
     db.refresh(obj)
     return obj
 
-def get_or_create_device(db: Session, esp_id: str, nombre: Optional[str] = None) -> Dispositivo:
-    d = db.query(Dispositivo).filter(Dispositivo.esp_id == esp_id).first()
+def get_or_create_device(db: Session, esp_id: str, nombre: Optional[str] = None) -> Device:
+    d = db.query(Device).filter(Device.esp_id == esp_id).first()
     if not d:
-        d = Dispositivo(esp_id=esp_id, nombre=nombre)
+        d = Device(esp_id=esp_id, nombre=nombre)
         db.add(d); db.commit(); db.refresh(d)
         db.add(Mecanismos(device_id=d.id))
         db.add(Config(device_id=d.id))
