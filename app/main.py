@@ -134,13 +134,12 @@ def create_app() -> FastAPI:
     @app.middleware("http")
     async def no_cache_static(request: Request, call_next):
         response: Response = await call_next(request)
-        if request.url.path.startswith("/static/"):
+        path = request.url.path
+        if path.startswith("/static/") or path.endswith(".js") or path.endswith(".css"):
             response.headers["Cache-Control"] = "no-store"
             response.headers["Pragma"] = "no-cache"
             response.headers["Expires"] = "0"
         return response
-
-    return app
 
 
 app = create_app()
