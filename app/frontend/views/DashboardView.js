@@ -26,16 +26,22 @@ export default function DashboardView(container){
 
   async function refresh(){
     try{
-      const [latest, history] = await Promise.all([ getLatest(), getHistory() ]);
-      if (latest){
-        const tempTxt = fmt(latest.temperatura,"°C"); if (elTemp.textContent !== tempTxt) elTemp.textContent = tempTxt;
-        const humTxt  = fmt(latest.humedad,"%");       if (elHum.textContent  !== humTxt)  elHum.textContent  = humTxt;
-        const soilTxt = fmt(latest.humedad_suelo,"%"); if (elSoil.textContent !== soilTxt) elSoil.textContent = soilTxt;
-        const ts = latest.fecha_hora ? new Date(latest.fecha_hora).toLocaleTimeString() : "";
+      const [latest, historyRaw] = await Promise.all([ getLatest(), getHistory() ]);
+
+      const okLatest = latest && !latest.__error ? latest : null;
+      if (okLatest){
+        const tempTxt = fmt(okLatest.temperatura,"°C"); if (elTemp.textContent !== tempTxt) elTemp.textContent = tempTxt;
+        const humTxt  = fmt(okLatest.humedad,"%");       if (elHum.textContent  !== humTxt)  elHum.textContent  = humTxt;
+        const soilTxt = fmt(okLatest.humedad_suelo,"%"); if (elSoil.textContent !== soilTxt) elSoil.textContent = soilTxt;
+        const ts = okLatest.fecha_hora ? new Date(okLatest.fecha_hora).toLocaleTimeString() : "";
         elTs.textContent = ts ? `Actualizado ${ts}` : "";
+      } else {
+        elTemp.textContent = "—"; elHum.textContent = "—"; elSoil.textContent = "—"; elTs.textContent = "";
       }
-      const last24 = (history || []).slice(-24).sort((a,b)=> new Date(a.fecha_hora)-new Date(b.fecha_hora));
-      drawLine(canvas, last24.map(r=>r.temperatura));
+
+      const history = Array.isArray(historyRaw) ? historyRaw : [];
+      const last24 = history.slice(-24).sort((a,b)=> new Date(a.fecha_hora)-new Date(b.fecha_hora));
+      drawLine(canvas, last24.map(r => r.temperatura ?? null));
     }catch(e){
     }finally{
       if (running) timer = setTimeout(refresh, 5000);
@@ -47,9 +53,9 @@ export default function DashboardView(container){
 
   refresh();
 
-  return () => { 
-    running = false; 
-    if (timer) clearTimeout(timer); 
+  return () => {
+    running = false;
+    if (timer) clearTimeout(timer);
     window.removeEventListener("esp:changed", onEspChanged);
   };
 }
