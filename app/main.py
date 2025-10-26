@@ -1,11 +1,12 @@
 import os, time, subprocess
 from pathlib import Path
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from sqlalchemy import text
 from sqlalchemy.orm import Session
+from starlette.responses import Response
 from app.mqtt_client import start_mqtt_listener
 
 from app.api.deps import get_db
@@ -129,6 +130,15 @@ def create_app() -> FastAPI:
     frontend_dir = Path(__file__).parent / "frontend"
     frontend_dir.mkdir(parents=True, exist_ok=True)
     app.mount("/", StaticFiles(directory=frontend_dir, html=True), name="frontend")
+
+    @app.middleware("http")
+    async def no_cache_static(request: Request, call_next):
+        response: Response = await call_next(request)
+        if request.url.path.startswith("/static/"):
+            response.headers["Cache-Control"] = "no-store"
+            response.headers["Pragma"] = "no-cache"
+            response.headers["Expires"] = "0"
+        return response
 
     return app
 
