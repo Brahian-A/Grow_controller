@@ -141,5 +141,7 @@ def create_app() -> FastAPI:
             response.headers["Expires"] = "0"
         return response
 
+    return app
+
 
 app = create_app()
