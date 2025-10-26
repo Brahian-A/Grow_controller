@@ -9,51 +9,106 @@ import { getActiveEsp, setActiveEsp } from "./store/devices.js";
 import { addDevice } from "./api/index.js";
 import { toast } from "./ui/Toast.js";
 
-function toggleMenu(){ document.body.classList.toggle('menu-open'); }
-function closeMenu(){ document.body.classList.remove('menu-open'); }
+const sidebar  = document.getElementById("sidebar");
+const btnMenu  = document.getElementById("btn-menu");
+const backdrop = document.getElementById("backdrop");
 
-document.addEventListener('click', e=>{
-  if (e.target.closest('#btn-menu')) { toggleMenu(); return; }
-  if (e.target.id === 'backdrop') { closeMenu(); return; }
-  const link = e.target.closest('#sidebar nav a');
+function openMenu() {
+  document.body.classList.add("menu-open");
+  if (sidebar) sidebar.hidden = false;
+  if (backdrop) backdrop.style.display = "block";
+  if (btnMenu) btnMenu.setAttribute("aria-expanded", "true");
+}
+
+function closeMenu() {
+  document.body.classList.remove("menu-open");
+  if (sidebar) sidebar.hidden = true;
+  if (backdrop) backdrop.style.display = "none";
+  if (btnMenu) btnMenu.setAttribute("aria-expanded", "false");
+}
+
+function toggleMenu() {
+  const expanded = btnMenu?.getAttribute("aria-expanded") === "true";
+  if (expanded) {
+    closeMenu();
+  } else {
+    openMenu();
+  }
+}
+
+document.addEventListener("click", (e) => {
+  if (e.target.closest("#btn-menu")) {
+    toggleMenu();
+    return;
+  }
+
+  if (e.target.id === "backdrop") {
+    closeMenu();
+    return;
+  }
+
+  const link = e.target.closest("#sidebar nav a");
   if (link) {
-    const href = link.getAttribute('href');
-    if (href?.startsWith('#/')) location.hash = href.slice(1);
+    const href = link.getAttribute("href");
+    if (href?.startsWith("#/")) {
+      location.hash = href.slice(1);
+    }
     closeMenu();
   }
 });
-document.addEventListener('keydown', e=>{ if (e.key === 'Escape') closeMenu(); });
 
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") closeMenu();
+});
 
-async function initDevicesUI(){
+async function initDevicesUI() {
   const sel = document.getElementById("device-select");
   const btnAdd = document.getElementById("btn-add-device");
   const devices = await fetchDevices();
 
-  // poblar selector
-  sel.innerHTML = devices.map(d => `<option value="${d.esp_id}">${d.nombre || d.esp_id}</option>`).join("");
+  sel.innerHTML = devices
+    .map(
+      (d) =>
+        `<option value="${d.esp_id}">${d.nombre || d.esp_id}</option>`
+    )
+    .join("");
 
-  
   let active = getActiveEsp();
   if (!active && devices.length === 1) active = devices[0].esp_id;
-  if (active) sel.value = active; else sel.selectedIndex = -1;
+  if (active) {
+    sel.value = active;
+  } else {
+    sel.selectedIndex = -1;
+  }
 
   sel.addEventListener("change", () => {
     setActiveEsp(sel.value);
+    const evChange = new CustomEvent("esp:changed", {
+      detail: { esp_id: sel.value },
+    });
+    window.dispatchEvent(evChange);
   });
 
   btnAdd.addEventListener("click", async () => {
     const esp_id = prompt("ESP ID (ej: esp32s3-ABC123):");
     if (!esp_id) return;
+
     const nombre = prompt("Nombre (opcional):") || null;
     const res = await addDevice({ esp_id, nombre });
+
     if (res) {
       const opt = document.createElement("option");
       opt.value = res.esp_id;
       opt.textContent = res.nombre || res.esp_id;
       sel.appendChild(opt);
+
       sel.value = res.esp_id;
       setActiveEsp(res.esp_id);
+
+      const evChange = new CustomEvent("esp:changed", {
+        detail: { esp_id: res.esp_id },
+      });
+      window.dispatchEvent(evChange);
     } else {
       toast("No se pudo crear el dispositivo (quizás ya existe).");
     }
@@ -61,10 +116,10 @@ async function initDevicesUI(){
 }
 
 addRoute("/dashboard", DashboardView);
-addRoute("/history",   HistoryView);
-addRoute("/logs",      LogsView);
+addRoute("/history", HistoryView);
+addRoute("/logs", LogsView);
 addRoute("/actuators", ActuatorsView);
-addRoute("/config",    ConfigView);
+addRoute("/config", ConfigView);
 
 initDevicesUI().then(() => {
   startRouter(document.getElementById("app"));

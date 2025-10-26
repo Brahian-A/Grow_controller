@@ -6,24 +6,59 @@
   <title>Greenhouse</title>
   <link rel="manifest" href="/manifest.json" />
   <link rel="stylesheet" href="./styles.css?v=10" />
-
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
   <script defer src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/es.js"></script>
 </head>
 <body>
-  <header class="topbar">
-    <button id="btn-menu">☰</button>
-    <h2>Invernadero</h2>
-    <div style="display:flex; align-items:center; gap:8px;">
-      <select id="device-select" style="border-radius:10px;padding:6px 8px;border:0;outline:none"></select>
-      <button id="btn-add-device" class="btn" style="padding:6px 10px;">+ Agregar</button>
-      <div id="badge-online" class="badge">● Online</div>
+  <a href="#app" class="skip-link">Saltar al contenido</a>
+
+  <header class="topbar" role="banner">
+    <button
+      id="btn-menu"
+      class="topbar-menu-btn"
+      aria-controls="sidebar"
+      aria-expanded="false"
+    >
+      ☰
+      <span class="sr-only">Abrir menú de navegación</span>
+    </button>
+
+    <h2 id="app-title">Invernadero</h2>
+
+    <div
+      style="display:flex; align-items:center; gap:8px;"
+      role="group"
+      aria-label="Dispositivo activo"
+    >
+      <label for="device-select" class="sr-only">Seleccionar dispositivo</label>
+      <select
+        id="device-select"
+        style="border-radius:10px;padding:6px 8px;border:0;outline:none"
+      ></select>
+
+      <button id="btn-add-device" class="btn" style="padding:6px 10px;">
+        + Agregar
+      </button>
+
+      <div
+        id="badge-online"
+        class="badge"
+        role="status"
+        aria-live="polite"
+      >
+        ● Online
+      </div>
     </div>
   </header>
 
-  <aside id="sidebar">
-    <h1>Menú</h1>
+  <aside
+    id="sidebar"
+    class="sidebar"
+    aria-label="Navegación principal"
+    hidden
+  >
+    <h1 class="sidebar-title">Menú</h1>
     <nav>
       <a href="#/dashboard">Dashboard</a>
       <a href="#/history">Historial</a>
