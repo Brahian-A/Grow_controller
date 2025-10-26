@@ -6,7 +6,6 @@ from sqlalchemy.orm import validates, relationship
 from app.db.base import Base
 
 
-
 class Device(Base):
     __tablename__ = "device"
 
@@ -17,11 +16,10 @@ class Device(Base):
     ultimo_contacto = Column(DateTime(timezone=True), nullable=True)
 
     # Relaciones
-    lecturas   = relationship("Lectura", back_populates="Device", cascade="all, delete-orphan")
-    mecanismos = relationship("Mecanismos", back_populates="Device", uselist=False, cascade="all, delete-orphan")
-    config     = relationship("Config", back_populates="Device", uselist=False, cascade="all, delete-orphan")
-    eventos    = relationship("Evento", back_populates="Device", cascade="all, delete-orphan")
-
+    lecturas   = relationship("Lectura", back_populates="device", cascade="all, delete-orphan")
+    mecanismos = relationship("Mecanismos", back_populates="device", uselist=False, cascade="all, delete-orphan")
+    config     = relationship("Config", back_populates="device", uselist=False, cascade="all, delete-orphan")
+    eventos    = relationship("Evento", back_populates="device", cascade="all, delete-orphan")
 
 
 class Lectura(Base):
@@ -35,10 +33,11 @@ class Lectura(Base):
     humedad_suelo  = Column(Float, nullable=False)
     nivel_de_agua  = Column(Float, nullable=False)
 
-    dispositivo = relationship("Device", back_populates="lecturas")
+    # Relación inversa con Device
+    device = relationship("Device", back_populates="lecturas")
+
 
 Index("idx_lecturas_device_time", Lectura.device_id, Lectura.fecha_hora)
-
 
 
 class Mecanismos(Base):
@@ -50,7 +49,8 @@ class Mecanismos(Base):
     luz         = Column(Boolean, nullable=False, default=False, server_default=text("0"))
     ventilador  = Column(Boolean, nullable=False, default=False, server_default=text("0"))
 
-    dispositivo = relationship("device", back_populates="mecanismos")
+    # Relación con Device
+    device = relationship("Device", back_populates="mecanismos")
 
     __table_args__ = (
         UniqueConstraint("device_id", name="uq_mecanismos_device"),
@@ -68,7 +68,8 @@ class Config(Base):
     humedad_ambiente = Column(Integer, nullable=False, default=30)
     margen           = Column(Integer, nullable=False, default=5)
 
-    dispositivo = relationship("Device", back_populates="config")
+    # Relación con Device
+    device = relationship("Device", back_populates="config")
 
     __table_args__ = (
         CheckConstraint('margen >= 5', name='check_margen_minimo_5'),
@@ -93,6 +94,8 @@ class Evento(Base):
     detalle     = Column(String(255), nullable=False)
     mensaje     = Column(String(255), nullable=False)
 
-    dispositivo = relationship("Device", back_populates="eventos")
+    # Relación con Device
+    device = relationship("Device", back_populates="eventos")
+
 
 Index("idx_eventos_device_time", Evento.device_id, Evento.fecha_hora)

@@ -7,34 +7,36 @@ import io, csv
 import logging
 import json
 
-from app.servicios.mqtt_funciones import enviar_cmd_mqtt # Se usa para enviar comandos
+from app.servicios.mqtt_funciones import enviar_cmd_mqtt  # Se usa para enviar comandos
 from app.db.session import SessionLocal
 from app.db.models import Device, Lectura, Mecanismos, Config
+from app.servicios.devices import get_or_create_device, get_device_by_esp_id
+
+
+# ============================================================
+# FUNCIONES BASE
+# ============================================================
 
 def guardar(db: Session, obj):
+    """Guarda un objeto en la base de datos y lo refresca."""
     db.add(obj)
     db.commit()
     db.refresh(obj)
     return obj
 
-def get_or_create_device(db: Session, esp_id: str, nombre: Optional[str] = None) -> Device:
-    d = db.query(Device).filter(Device.esp_id == esp_id).first()
-    if not d:
-        d = Device(esp_id=esp_id, nombre=nombre)
-        db.add(d); db.commit(); db.refresh(d)
-        db.add(Mecanismos(device_id=d.id))
-        db.add(Config(device_id=d.id))
-        db.commit(); db.refresh(d)
-    return d
 
-# ----------------- configuración (por dispositivo)
+# ============================================================
+# CONFIGURACIÓN (por device)
+# ============================================================
 
 def get_config(db: Session, esp_id: str) -> Config:
+    """Obtiene la configuración actual de un device, o la crea si no existe."""
     d = get_or_create_device(db, esp_id)
     cfg = db.query(Config).filter(Config.device_id == d.id).first()
     if not cfg:
         cfg = guardar(db, Config(device_id=d.id))
     return cfg
+
 
 def set_config(
     db: Session,
@@ -44,6 +46,7 @@ def set_config(
     humedad_ambiente: Optional[int] = None,
     margen: Optional[int] = None
 ) -> Config:
+    """Actualiza los umbrales de configuración de un device."""
     cfg = get_config(db, esp_id)
     if humedad_suelo is not None:    cfg.humedad_suelo = humedad_suelo
     if temperatura is not None:      cfg.temperatura = temperatura
@@ -51,26 +54,31 @@ def set_config(
     if margen is not None:           cfg.margen = margen
     return guardar(db, cfg)
 
-# ----------------- mecanismos (usa DB/MQTT)
+
+# ============================================================
+# MECANISMOS (usa DB/MQTT)
+# ============================================================
 
 def get_status(db: Session, esp_id: str) -> Mecanismos:
+    """Obtiene el estado actual de los mecanismos desde la DB."""
     d = get_or_create_device(db, esp_id)
     # El estado se lee directamente de la DB (actualizado por el listener MQTT).
     stat = db.query(Mecanismos).filter(Mecanismos.device_id == d.id).first() or Mecanismos(device_id=d.id)
-    # Se eliminó la lógica de snapshot
     return guardar(db, stat)
 
-def set_mecanismo(db: Session, esp_id: str, bomba=None, luz=None, ventilador=None) -> Mecanismos:
-    d = get_or_create_device(db, esp_id)
 
+def set_mecanismo(db: Session, esp_id: str, bomba=None, luz=None, ventilador=None) -> Mecanismos:
+    """Actualiza el estado de los mecanismos y envía comandos por MQTT."""
+    d = get_or_create_device(db, esp_id)
     mqtt_ok = True
+
     # Envío de comandos SET por MQTT
     if bomba is not None:
-        mqtt_ok = enviar_cmd_mqtt({"cmd":"SET","target":"RIEGO","value":"ON" if bomba else "OFF"}, esp_id=esp_id) and mqtt_ok
+        mqtt_ok = enviar_cmd_mqtt({"cmd": "SET", "target": "RIEGO", "value": "ON" if bomba else "OFF"}, esp_id=esp_id) and mqtt_ok
     if ventilador is not None:
-        mqtt_ok = enviar_cmd_mqtt({"cmd":"SET","target":"VENT","value":"ON" if ventilador else "OFF"}, esp_id=esp_id) and mqtt_ok
+        mqtt_ok = enviar_cmd_mqtt({"cmd": "SET", "target": "VENT", "value": "ON" if ventilador else "OFF"}, esp_id=esp_id) and mqtt_ok
     if luz is not None:
-        mqtt_ok = enviar_cmd_mqtt({"cmd":"SET","target":"LUZ","value":"ON" if luz else "OFF"}, esp_id=esp_id) and mqtt_ok
+        mqtt_ok = enviar_cmd_mqtt({"cmd": "SET", "target": "LUZ", "value": "ON" if luz else "OFF"}, esp_id=esp_id) and mqtt_ok
 
     mech = db.query(Mecanismos).filter(Mecanismos.device_id == d.id).first() or Mecanismos(device_id=d.id)
     if bomba is not None:      mech.bomba = bool(bomba)
@@ -78,15 +86,16 @@ def set_mecanismo(db: Session, esp_id: str, bomba=None, luz=None, ventilador=Non
     if ventilador is not None: mech.ventilador = bool(ventilador)
 
     mech = guardar(db, mech)
-
-    # El flag de error se mantiene para compatibilidad con el endpoint /mecanismos
     mech._warning = None if mqtt_ok else "serial_unavailable"
     return mech
 
 
-# ----------------- lecturas (por dispositivo)
+# ============================================================
+# LECTURAS (por device)
+# ============================================================
 
 def agregar_lectura(esp_id: str, temperatura: float, humedad: float, humedad_suelo: float, nivel_de_agua: float) -> Lectura:
+    """Agrega una lectura en la base de datos para un device dado."""
     db = SessionLocal()
     try:
         d = get_or_create_device(db, esp_id)
@@ -107,8 +116,10 @@ def agregar_lectura(esp_id: str, temperatura: float, humedad: float, humedad_sue
     finally:
         db.close()
 
+
 def ultima_lectura(db: Session, esp_id: str) -> Optional[Lectura]:
-    d = db.query(Dispositivo).filter_by(esp_id=esp_id).first()
+    """Devuelve la última lectura registrada del device."""
+    d = get_device_by_esp_id(db, esp_id)
     if not d:
         return None
     stmt = (
@@ -119,8 +130,10 @@ def ultima_lectura(db: Session, esp_id: str) -> Optional[Lectura]:
     )
     return db.execute(stmt).scalars().first()
 
+
 def ultimas_lecturas_7d(db: Session, esp_id: str) -> List[Lectura]:
-    d = db.query(Dispositivo).filter_by(esp_id=esp_id).first()
+    """Devuelve las lecturas de los últimos 7 días."""
+    d = get_device_by_esp_id(db, esp_id)
     if not d:
         return []
     cutoff = datetime.now(timezone.utc) - timedelta(days=7)
@@ -131,8 +144,10 @@ def ultimas_lecturas_7d(db: Session, esp_id: str) -> List[Lectura]:
     )
     return db.execute(stmt).scalars().all()
 
+
 def csv_from_range(db: Session, esp_id: str, desde: str, hasta: str) -> str:
-    d = db.query(Dispositivo).filter_by(esp_id=esp_id).first()
+    """Exporta lecturas a CSV entre dos fechas."""
+    d = get_device_by_esp_id(db, esp_id)
     if not d:
         buf = io.StringIO()
         writer = csv.writer(buf, lineterminator="\n")
@@ -147,7 +162,6 @@ def csv_from_range(db: Session, esp_id: str, desde: str, hasta: str) -> str:
 
     start_local = datetime.combine(d0, time.min).replace(tzinfo=tz_local)
     end_local   = datetime.combine(d1, time.max).replace(tzinfo=tz_local)
-
     start_utc = start_local.astimezone(timezone.utc)
     end_utc   = end_local.astimezone(timezone.utc)
 
@@ -184,7 +198,10 @@ def csv_from_range(db: Session, esp_id: str, desde: str, hasta: str) -> str:
 
     return buf.getvalue()
 
-# ----------------- Gemini
+
+# ============================================================
+# GEMINI API (condiciones óptimas de plantas)
+# ============================================================
 
 import google.generativeai as genai
 from app.core.config import config
@@ -197,10 +214,9 @@ except Exception as e:
     logging.error(f"Error al configurar Gemini: {e}")
     model = None
 
+
 def get_plant_conditions(plant_name: str) -> dict:
-    """
-    Consulta a Gemini las condiciones óptimas para una planta y devuelve un dict.
-    """
+    """Consulta a Gemini las condiciones óptimas para una planta y devuelve un dict."""
     if not model:
         raise ConnectionError("El modelo de Gemini no está disponible.")
 
@@ -217,20 +233,12 @@ def get_plant_conditions(plant_name: str) -> dict:
 
     try:
         response = model.generate_content(prompt)
-        
-        # Limpiamos la respuesta de la IA
         clean_response = response.text.strip()
-        
-        # Quitamos el formato Markdown si existe
         if clean_response.startswith("```json"):
             clean_response = clean_response.replace("```json", "", 1).strip()
         if clean_response.endswith("```"):
             clean_response = clean_response.rsplit("```", 1)[0].strip()
-
-        # Parseamos el JSON
-        data = json.loads(clean_response)
-        return data
-
+        return json.loads(clean_response)
     except json.JSONDecodeError:
         logging.error(f"Respuesta de Gemini no es un JSON válido para '{plant_name}': {response.text}")
         raise ValueError("La respuesta de la IA no pudo ser procesada como JSON.")
