@@ -9,7 +9,9 @@ from sqlalchemy.orm import Session
 from app.db.session import SessionLocal
 from app.db.models import Lectura, Dispositivo, Mecanismos
 from app.servicios.funciones import agregar_lectura
-from app.servicios.mqtt_funciones import setup_mqtt_client 
+from app.servicios.mqtt_funciones import setup_mqtt_client
+from app.servicios.umbrales import procesar_umbrales
+
 
 # configuracion basica de logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
