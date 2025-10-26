@@ -44,7 +44,7 @@ export default function DashboardView(container){
       drawLine(canvas, last24.map(r => r.temperatura ?? null));
     }catch(e){
     }finally{
-      if (running) timer = setTimeout(refresh, 5000);
+      if (running) timer = setTimeout(refresh, 1500);
     }
   }
 
