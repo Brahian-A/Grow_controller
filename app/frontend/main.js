@@ -2,7 +2,7 @@ import { startRouter, addRoute } from "./core/router.js";
 import DashboardView from "./views/DashboardView.js";
 import HistoryView from "./views/HistoryView.js";
 import LogsView from "./views/LogsView.js";
-import ActuatorsView from "./views/ActuatorsView.js";
+import ActuatorsView from "./views/ActuatorsView.js?v=13";
 import ConfigView from "./views/ConfigView.js";
 import { loadDevices, listDevices, getActiveEsp, setActiveEsp } from "./store/devices.js";
 import { addDevice } from "./api/index.js";

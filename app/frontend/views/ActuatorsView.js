@@ -20,17 +20,20 @@ export default function ActuatorsView(container){
   wrap.innerHTML = `
     <div class="a-card a-click" id="card-luces">
       <div class="a-icon"><img src="./assets/img/luces.png" alt="Luces"></div>
-      <div class="a-title">Encender luces</div>
+      <div class="a-title">Luces</div>
+      <div class="a-status" id="status-luces">OFF</div>
     </div>
 
     <div class="a-card a-click" id="card-vent">
       <div class="a-icon"><img src="./assets/img/ventilacion.png" alt="Ventilación"></div>
       <div class="a-title">Ventilación</div>
+      <div class="a-status" id="status-vent">OFF</div>
     </div>
 
     <div class="a-card a-click" id="card-riego">
       <div class="a-icon"><img src="./assets/img/regar.png" alt="Riego"></div>
-      <div class="a-title">Activar riego</div>
+      <div class="a-title">Riego</div>
+      <div class="a-status" id="status-riego">OFF</div>
     </div>
 
     <div class="a-card" id="card-agua">
@@ -54,16 +57,31 @@ export default function ActuatorsView(container){
   const porc      = wrap.querySelector("#agua-porc");
   const label     = wrap.querySelector("#agua-label");
 
+  const stLuces = wrap.querySelector("#status-luces");
+  const stVent  = wrap.querySelector("#status-vent");
+  const stRiego = wrap.querySelector("#status-riego");
+
   let mech = null;
   let timer = null;
   let running = true;
   let busy = false;
 
+  function setStatus(el, on){
+    if (!el) return;
+    el.textContent = on ? "ON" : "OFF";
+    el.classList.toggle("is-on", !!on);
+  }
+
   function paintStates(){
     if (!mech) return;
     cardLuces.classList.toggle("active", !!mech.luz);
+    setStatus(stLuces, mech.luz);
+
     cardVent.classList.toggle("active",  !!mech.ventilador);
+    setStatus(stVent, mech.ventilador);
+
     cardRiego.classList.toggle("active", !!mech.bomba);
+    setStatus(stRiego, mech.bomba);
   }
   function paintWater(pct){
     const p = clampPct(pct);
