@@ -25,7 +25,7 @@ def _update_mecanismos_from_telemetria(db: Session, esp_id: str, data: dict):
     """
     Persiste el estado real de los mecanismos reportado por el ESP32 directamente en la DB.
     """
-    d = db.query(Dispositivo).filter(Dispositivo.esp_id == esp_id).first()
+    d = db.query(Device).filter(Device.esp_id == esp_id).first()
     if not d:
         log.warning("Dispositivo %s no encontrado para actualizar mecanismos.", esp_id)
         return
