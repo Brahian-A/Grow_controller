@@ -11,15 +11,10 @@ router = APIRouter(prefix="/mecanismos", tags=["mecanismos"])
 
 @router.get("", response_model=MecanismosOut)
 def get_stat(esp_id: str = Depends(resolve_esp_id), db: Session = Depends(get_db)):
-    """Obtiene el estado actual de los mecanismos (leído desde la DB)."""
     return get_status(db, esp_id)
 
 @router.put("", response_model=MecanismosOut)
 async def put_mech(payload: MecanismosIn, db: Session = Depends(get_db)): 
-    """
-    Establece el estado de uno o más mecanismos.
-    Envía comandos SET por MQTT y persiste el estado en la DB.
-    """
     cambios = payload.model_dump(exclude_none=True)
     
     esp_id = resolve_esp_id(db=db, esp_id=cambios.pop("esp_id", None))
