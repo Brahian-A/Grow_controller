@@ -5,7 +5,7 @@ import LogsView from "./views/LogsView.js";
 import ActuatorsView from "./views/ActuatorsView.js?v=13";
 import ConfigView from "./views/ConfigView.js";
 import { loadDevices, listDevices, getActiveEsp, setActiveEsp } from "./store/devices.js";
-import { addDevice } from "./api/index.js";
+import { editDevice } from "./api/index.js";
 import { toast } from "./ui/Toast.js";
 
 const sidebar = document.getElementById("sidebar");
@@ -57,7 +57,7 @@ document.addEventListener("keydown", (e) => {
 
 async function initDevicesUI() {
   const sel = document.getElementById("device-select");
-  const btnAdd = document.getElementById("btn-add-device");
+  const btnEdit = document.getElementById("btn-edit-device");
 
   await loadDevices();
   const devices = listDevices();
@@ -74,20 +74,28 @@ async function initDevicesUI() {
     setActiveEsp(sel.value);
   });
 
-  btnAdd.addEventListener("click", async () => {
-    const esp_id = prompt("ESP ID (ej: esp32s3-ABC123):");
-    if (!esp_id) return;
-    const nombre = prompt("Nombre (opcional):") || null;
-    const res = await addDevice({ esp_id, nombre });
+  btnEdit.addEventListener("click", async () => {
+    const currentEspId = getActiveEsp();
+    if (!currentEspId) {
+      toast("No hay ningún dispositivo seleccionado.", "warn");
+      return;
+    }
+
+    const currentDevice = devices.find(d => d.esp_id === currentEspId);
+    const newName = prompt("Ingresa el nuevo nombre para:", currentDevice.nombre || currentDevice.esp_id);
+
+    if (newName === null || newName.trim() === "") return;
+
+    const res = await editDevice(currentEspId, { nombre: newName });
     if (res && !res.__error) {
-      const opt = document.createElement("option");
-      opt.value = res.esp_id;
-      opt.textContent = res.nombre || res.esp_id;
-      sel.appendChild(opt);
-      sel.value = res.esp_id;
-      setActiveEsp(res.esp_id);
+      toast("Nombre actualizado con éxito ✅");
+
+      const opt = sel.querySelector(`option[value="${currentEspId}"]`);
+      if (opt) opt.textContent = res.nombre || res.esp_id;
+
+      currentDevice.nombre = res.nombre;
     } else {
-      toast("No se pudo crear el dispositivo (quizás ya existe).");
+      toast("No se pudo actualizar el nombre.", "err");
     }
   });
 }
