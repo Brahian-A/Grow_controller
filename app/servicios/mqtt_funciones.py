@@ -27,6 +27,12 @@ def enviar_cmd_mqtt(cmd: dict, esp_id: Optional[str] = None) -> bool:
     if not client or not client.is_connected():
         logging.warning("enviar_cmd_mqtt: Cliente MQTT no conectado.")
         return False
+    
+    if not client.is_connected():
+     # Si esto se dispara, el cliente no se conectó en el startup de FastAPI
+        logging.warning("enviar_cmd_mqtt: Cliente MQTT NO CONECTADO al broker.")
+        return False
+
         
     final_esp_id = esp_id
     if not final_esp_id:
@@ -40,10 +46,14 @@ def enviar_cmd_mqtt(cmd: dict, esp_id: Optional[str] = None) -> bool:
     payload = json.dumps(cmd)
     
     try:
+        logging.info(f"Intentando PUBLISH de comando a {topic} | Payload: {payload}")
         result = client.publish(topic, payload, qos=1)
+ 
         if result.rc != mqtt.MQTT_ERR_SUCCESS:
             logging.error(f"Fallo al publicar MQTT (rc: {result.rc}) a {topic}")
             return False
+        
+        logging.info(f"Comando MQTT PUBLICADO con éxito (rc: {result.rc})")
         return True
     except Exception as e:
         logging.error(f"Excepción al publicar MQTT: {e}")
