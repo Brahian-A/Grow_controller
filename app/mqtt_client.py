@@ -11,9 +11,8 @@ from app.db.models import Lectura, Device, Mecanismos
 from app.servicios.funciones import agregar_lectura
 from app.servicios.mqtt_funciones import setup_mqtt_client
 from app.servicios.umbrales import procesar_umbrales
+from app.servicios.devices import get_or_create_device
 
-
-# configuracion basica de logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 log = logging.getLogger("mqtt-listener")
 
@@ -35,7 +34,6 @@ def _update_mecanismos_from_telemetria(db: Session, esp_id: str, data: dict):
         mech = Mecanismos(device_id=d.id)
         db.add(mech)
 
-    # Actualización directa del estado real
     mech.bomba = (str(data.get("riego")).upper() == "ON")
     mech.ventilador = (str(data.get("vent")).upper() == "ON")
     mech.luz = (str(data.get("luz")).upper() == "ON")
@@ -60,10 +58,13 @@ def on_message(client, userdata, msg):
         # STATUS online/offline (retained)
         if parts[-1] == "status":
             with SessionLocal() as db:
-                d = db.query(Dispositivo).filter(Dispositivo.esp_id == esp_id).first()
-                if d:
-                    d.ultimo_contacto = datetime.now(timezone.utc)
-                    db.commit()
+                # USO DE get_or_create_device para garantizar la existencia
+                d = get_or_create_device(db, esp_id) 
+                
+                # d no es None, se actualiza el contacto
+                d.ultimo_contacto = datetime.now(timezone.utc)
+                db.commit()
+                
             log.info("STATUS %s: %s", esp_id, payload_str)
             return
 
@@ -76,15 +77,16 @@ def on_message(client, userdata, msg):
 
             # sellar último contacto aunque no guardemos lectura
             with SessionLocal() as db:
-                d = db.query(Dispositivo).filter(Dispositivo.esp_id == esp_id).first()
-                if d:
-                    d.ultimo_contacto = datetime.now(timezone.utc)
-                    db.commit()
+                # USO DE get_or_create_device para garantizar la existencia
+                d = get_or_create_device(db, esp_id) 
+                
+                # d no es None, se actualiza el contacto
+                d.ultimo_contacto = datetime.now(timezone.utc)
+                db.commit()
 
             # si temp/hum vienen null (o NaN), NO persistir (evita NOT NULL fail)
             if not (_is_num(t) and _is_num(h)):
                 log.info("Skip lectura %s: temp/hum inválidos (t=%s, h=%s)", esp_id, t, h)
-                # igual podemos reflejar estado de mecanismos si viene en la telemetría
                 if all(k in data for k in ("riego", "vent", "luz")):
                     with SessionLocal() as db:
                         _update_mecanismos_from_telemetria(db, esp_id, data)
@@ -109,7 +111,6 @@ def on_message(client, userdata, msg):
                 log.info("Lectura guardada con ÉXITO para %s", esp_id)
             
             except Exception as db_err:
-                # Si falla la persistencia, registramos un error
                 log.error("CRÍTICO: Fallo al persistir lectura para %s.", esp_id)
                 log.exception("Detalles del ERROR de DB (IntegrityError o NOT NULL, etc.):") 
                 
@@ -128,7 +129,6 @@ def on_message(client, userdata, msg):
 
 
 def _on_connect(client, userdata, flags, rc):
-    # rc == 0 ok. En reconexión, hay que re-suscribirse.
     if rc == 0:
         log.info("Conectado a MQTT (rc=0). Re-suscribiendo...")
         client.subscribe(MQTT_BASE_TOPIC, qos=1)
@@ -145,7 +145,6 @@ def start_mqtt_listener():
     client.on_message = on_message
     client.on_connect = _on_connect
 
-    # Registrar cliente global para que los endpoints puedan publicar por MQTT
     setup_mqtt_client(client)
 
     client.reconnect_delay_set(min_delay=1, max_delay=30)
@@ -157,7 +156,6 @@ def start_mqtt_listener():
         log.warning("No se pudo conectar a Mosquitto en localhost:1883. El listener no se iniciará.")
         return
 
-    # Primera suscripción (por si el on_connect no dispara por algún motivo)
     client.subscribe(MQTT_BASE_TOPIC, qos=1)
     log.info("Suscrito a: %s (QoS 1)", MQTT_BASE_TOPIC)
 

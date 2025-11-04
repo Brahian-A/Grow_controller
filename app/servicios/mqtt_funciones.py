@@ -3,13 +3,10 @@ import logging
 import json
 from typing import Optional
 
-# topico base para comandos
 CMD_TOPIC_BASE = "invernaderos/{esp_id}/cmd"
 
-# asume un ID por defecto para comandos si no se especifica.
 DEFAULT_ESP_ID = "main" 
 
-# almacenamiento global del cliente
 _mqtt_client = None
 
 def setup_mqtt_client(client: mqtt.Client):
