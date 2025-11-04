@@ -111,23 +111,22 @@ export default function ActuatorsView(container){
   async function toggle(field){
     if (!mech || busy) return;
     busy = true;
+    
+    const nextVal = !mech[field];
+    mech = { ...mech, [field]: nextVal };
+    paintStates();
+    
     try{
-      const nextVal = !mech[field];
-      mech = { ...mech, [field]: nextVal };
-      paintStates();
-
-      const updated = await putMech({ [field]: nextVal });
-
-      if (updated?.__error) {
-        return;
-      }
-      if (updated) {
-        mech = { ...mech, ...updated };
-        paintStates();
-      }
+    
+      await putMech({ [field]: nextVal });
+    
     }catch(e){
+
+      console.error("Fallo al enviar el comando:", e);
     }finally{
-      busy = false;
+     busy = false;  
+    
+     refresh();
     }
   }
 
