@@ -84,18 +84,29 @@ def on_message(client, userdata, msg):
             d.ultimo_contacto = datetime.now(timezone.utc)
             db.commit()
 
-        # STATUS online/offline (retained)
-        if parts[-1] == "status":
-            log.info("STATUS %s: %s", esp_id, payload_str)
-            return
+        # ============================================================
+        # 2. PROCESAMIENTO DE ESTADO y TELEMETRÍA (Corrección aquí)
+        # ============================================================
+        
+        # Verificamos si el payload tiene datos de actuadores (riego, vent, luz)
+        has_actuator_data = all(k in data for k in ("riego", "vent", "luz"))
 
-        # ============================================================
-        # 2. PROCESAMIENTO DE TELEMETRÍA
-        # ============================================================
-        if parts[-1] == "telemetria" and all(k in data for k in ("riego", "vent", "luz")):
+        if parts[-1] == "status":
+            # Si el mensaje /status contiene datos de actuadores (el snapshot)
+            if has_actuator_data:
+                log.info("STATUS_ACTUADORES %s: Actualizando Mecanismos inmediatamente.", esp_id)
+                with SessionLocal() as db:
+                    _update_mecanismos_from_telemetria(db, esp_id, data)
+            else:
+                # Es el mensaje simple 'online'/'offline' o un status sin actuadores
+                log.info("STATUS %s: %s", esp_id, payload_str)
+                return # Aquí sí salimos, ya que no hay que actualizar mecanismos ni lecturas.
+
+        # PROCESAMIENTO DE TELEMETRÍA (Solo si es /telemetria)
+        if parts[-1] == "telemetria" and has_actuator_data: 
             with SessionLocal() as db:
-                _update_mecanismos_from_telemetria(db, esp_id, data)
-                
+                _update_mecanismos_from_telemetria(db, esp_id, data) 
+            
             t = data.get("temp_c")
             h = data.get("hum_amb")
             s = data.get("suelo_pct")
