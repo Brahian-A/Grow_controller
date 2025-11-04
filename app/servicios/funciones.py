@@ -62,17 +62,19 @@ def set_config(
 def get_status(db: Session, esp_id: str) -> Mecanismos:
     """Obtiene el estado actual de los mecanismos desde la DB."""
     d = get_or_create_device(db, esp_id)
-    # El estado se lee directamente de la DB (actualizado por el listener MQTT).
     stat = db.query(Mecanismos).filter(Mecanismos.device_id == d.id).first() or Mecanismos(device_id=d.id)
     return guardar(db, stat)
 
 
 def set_mecanismo(db: Session, esp_id: str, bomba=None, luz=None, ventilador=None) -> Mecanismos:
-    """Actualiza el estado de los mecanismos y envía comandos por MQTT."""
+    """
+    Envía comandos por MQTT. El listener es responsable de actualizar la DB.
+    """
     d = get_or_create_device(db, esp_id)
+    mech = db.query(Mecanismos).filter(Mecanismos.device_id == d.id).first() or Mecanismos(device_id=d.id)
+    
     mqtt_ok = True
-
-    # Envío de comandos SET por MQTT
+    
     if bomba is not None:
         mqtt_ok = enviar_cmd_mqtt({"cmd": "SET", "target": "RIEGO", "value": "ON" if bomba else "OFF"}, esp_id=esp_id) and mqtt_ok
     if ventilador is not None:
@@ -80,12 +82,7 @@ def set_mecanismo(db: Session, esp_id: str, bomba=None, luz=None, ventilador=Non
     if luz is not None:
         mqtt_ok = enviar_cmd_mqtt({"cmd": "SET", "target": "LUZ", "value": "ON" if luz else "OFF"}, esp_id=esp_id) and mqtt_ok
 
-    mech = db.query(Mecanismos).filter(Mecanismos.device_id == d.id).first() or Mecanismos(device_id=d.id)
-    if bomba is not None:      mech.bomba = bool(bomba)
-    if luz is not None:        mech.luz = bool(luz)
-    if ventilador is not None: mech.ventilador = bool(ventilador)
-
-    mech = guardar(db, mech)
+   
     mech._warning = None if mqtt_ok else "serial_unavailable"
     return mech
 
