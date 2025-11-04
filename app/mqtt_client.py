@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 
 import paho.mqtt.client as mqtt
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.db.session import SessionLocal
 from app.db.models import Lectura, Device, Mecanismos
@@ -22,23 +23,43 @@ MQTT_STATUS_TOPIC = "invernaderos/+/status"
 
 def _update_mecanismos_from_telemetria(db: Session, esp_id: str, data: dict):
     """
-    Persiste el estado real de los mecanismos reportado por el ESP32 directamente en la DB.
+    Persiste el estado REAL de los mecanismos reportado por el ESP32 en la DB.
     """
     d = db.query(Device).filter(Device.esp_id == esp_id).first()
     if not d:
-        log.warning("Dispositivo %s no encontrado para actualizar mecanismos.", esp_id)
+        log.warning("DISPOSITIVO no encontrado para actualizar mecanismos: %s", esp_id)
         return
 
     mech = db.query(Mecanismos).filter(Mecanismos.device_id == d.id).first()
     if not mech:
+        log.info("CREANDO registro Mecanismos para %s", esp_id)
         mech = Mecanismos(device_id=d.id)
         db.add(mech)
 
-    mech.bomba = (str(data.get("riego")).upper() == "ON")
-    mech.ventilador = (str(data.get("vent")).upper() == "ON")
-    mech.luz = (str(data.get("luz")).upper() == "ON")
+    new_bomba = (str(data.get("riego")).upper() == "ON")
+    new_vent = (str(data.get("vent")).upper() == "ON")
+    new_luz = (str(data.get("luz")).upper() == "ON")
 
-    db.commit()
+    # Comprobamos si hay CAMBIOS REALES para evitar un commit innecesario
+    if mech.bomba == new_bomba and mech.ventilador == new_vent and mech.luz == new_luz:
+        log.debug("Mecanismos de %s sin cambios", esp_id)
+        return
+        
+    log.info("SINCRONIZANDO estado de Mecanismos para %s. B:%s -> %s", 
+             esp_id, mech.bomba, new_bomba)
+
+    mech.bomba = new_bomba
+    mech.ventilador = new_vent
+    mech.luz = new_luz
+
+    try:
+        # Commit con manejo de errores, crucial para SQLite
+        db.commit()
+        log.info("MECANISMOS actualizados con éxito en DB para %s.", esp_id)
+    except SQLAlchemyError as e:
+        db.rollback()
+        log.error("FALLO CRÍTICO DE COMMIT en Mecanismos para %s.", esp_id)
+        log.exception("Detalles del error:")
 
 
 def _is_num(x):
@@ -55,51 +76,39 @@ def on_message(client, userdata, msg):
             log.error("Mensaje sin esp_id en payload o tópico. topic=%s payload=%s", msg.topic, payload_str)
             return
 
+        # ============================================================
+        # 1. ACTUALIZACIÓN DE CONTACTO (Para todos los mensajes con esp_id)
+        # ============================================================
+        with SessionLocal() as db:
+            d = get_or_create_device(db, esp_id) 
+            d.ultimo_contacto = datetime.now(timezone.utc)
+            db.commit()
+
         # STATUS online/offline (retained)
         if parts[-1] == "status":
-            with SessionLocal() as db:
-                # USO DE get_or_create_device para garantizar la existencia
-                d = get_or_create_device(db, esp_id) 
-                
-                # d no es None, se actualiza el contacto
-                d.ultimo_contacto = datetime.now(timezone.utc)
-                db.commit()
-                
             log.info("STATUS %s: %s", esp_id, payload_str)
             return
 
-        # TELEMETRÍA
-        if parts[-1] == "telemetria" and all(k in data for k in ("temp_c", "hum_amb", "suelo_pct", "nivel_pct")):
+        # ============================================================
+        # 2. PROCESAMIENTO DE TELEMETRÍA
+        # ============================================================
+        if parts[-1] == "telemetria" and all(k in data for k in ("riego", "vent", "luz")):
+            with SessionLocal() as db:
+                _update_mecanismos_from_telemetria(db, esp_id, data)
+                
             t = data.get("temp_c")
             h = data.get("hum_amb")
             s = data.get("suelo_pct")
             n = data.get("nivel_pct")
 
-            # sellar último contacto aunque no guardemos lectura
-            with SessionLocal() as db:
-                # USO DE get_or_create_device para garantizar la existencia
-                d = get_or_create_device(db, esp_id) 
-                
-                # d no es None, se actualiza el contacto
-                d.ultimo_contacto = datetime.now(timezone.utc)
-                db.commit()
+            # Comprobar la validez de los datos antes de guardarlos como lectura
+            valid_sensores = (_is_num(t) and _is_num(h) and _is_num(s) and _is_num(n))
 
-            # si temp/hum vienen null (o NaN), NO persistir (evita NOT NULL fail)
-            if not (_is_num(t) and _is_num(h)):
-                log.info("Skip lectura %s: temp/hum inválidos (t=%s, h=%s)", esp_id, t, h)
-                if all(k in data for k in ("riego", "vent", "luz")):
-                    with SessionLocal() as db:
-                        _update_mecanismos_from_telemetria(db, esp_id, data)
+            if not valid_sensores:
+                log.info("Skip lectura %s: Datos de sensor inválidos (T:%s, H:%s, S:%s, N:%s)", esp_id, t, h, s, n)
                 return
 
-            # suelo y nivel deben ser números también
-            if not (_is_num(s) and _is_num(n)):
-                log.info("Skip lectura %s: suelo/nivel inválidos (s=%s, n=%s)", esp_id, s, n)
-                if all(k in data for k in ("riego", "vent", "luz")):
-                    with SessionLocal() as db:
-                        _update_mecanismos_from_telemetria(db, esp_id, data)
-                return
-
+            # Persistir Lectura
             try:
                 agregar_lectura(
                     esp_id=esp_id,
@@ -113,13 +122,9 @@ def on_message(client, userdata, msg):
             except Exception as db_err:
                 log.error("CRÍTICO: Fallo al persistir lectura para %s.", esp_id)
                 log.exception("Detalles del ERROR de DB (IntegrityError o NOT NULL, etc.):") 
-                
-            if all(k in data for k in ("riego", "vent", "luz")):
-                with SessionLocal() as db:
-                    _update_mecanismos_from_telemetria(db, esp_id, data)
+            
             return
 
-        # Otros tópicos que no manejamos
         log.debug("Mensaje ignorado topic=%s payload=%s", msg.topic, payload_str)
 
     except json.JSONDecodeError:
