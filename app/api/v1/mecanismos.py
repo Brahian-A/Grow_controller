@@ -29,7 +29,9 @@ async def put_mech(payload: MecanismosIn, db: Session = Depends(get_db)):
     if getattr(mech_intermedio, "_serial_ok", True) is False:
         raise HTTPException(status_code=503, detail="ESP32 no disponible (serial/MQTT no disponible)")
 
-    await asyncio.sleep(0.3) 
+    db.commit()
+
+    await asyncio.sleep(1.0) 
     
     db.expire_all()
     
