@@ -50,15 +50,15 @@ export default function ActuatorsView(container){
 
   // refs
   const cardLuces = wrap.querySelector("#card-luces");
-  const cardVent  = wrap.querySelector("#card-vent");
+  const cardVent = wrap.querySelector("#card-vent");
   const cardRiego = wrap.querySelector("#card-riego");
-  const btnStop   = wrap.querySelector("#btn-stop");
-  const bar       = wrap.querySelector("#bar-agua");
-  const porc      = wrap.querySelector("#agua-porc");
-  const label     = wrap.querySelector("#agua-label");
+  const btnStop  = wrap.querySelector("#btn-stop");
+  const bar  = wrap.querySelector("#bar-agua");
+  const porc = wrap.querySelector("#agua-porc");
+  const label = wrap.querySelector("#agua-label");
 
   const stLuces = wrap.querySelector("#status-luces");
-  const stVent  = wrap.querySelector("#status-vent");
+  const stVent = wrap.querySelector("#status-vent");
   const stRiego = wrap.querySelector("#status-riego");
 
   let mech = null;
@@ -77,7 +77,7 @@ export default function ActuatorsView(container){
     cardLuces.classList.toggle("active", !!mech.luz);
     setStatus(stLuces, mech.luz);
 
-    cardVent.classList.toggle("active",  !!mech.ventilador);
+    cardVent.classList.toggle("active",  !!mech.ventilador);
     setStatus(stVent, mech.ventilador);
 
     cardRiego.classList.toggle("active", !!mech.bomba);
@@ -102,7 +102,6 @@ export default function ActuatorsView(container){
         paintWater(latest.nivel_de_agua);
       }
     }catch(e){
-      // silenciar
     }finally{
       if (running) timer = setTimeout(refresh, 5000);
     }
@@ -117,36 +116,46 @@ export default function ActuatorsView(container){
     paintStates();
     
     try{
-    
-      await putMech({ [field]: nextVal });
+      const updated = await putMech({ [field]: nextVal });
+      
+      if (!updated?.__error && updated) {
+        mech = { ...mech, ...updated };
+        paintStates();
+      } else {
+        mech = { ...mech, [field]: !nextVal };
+        paintStates();
+        console.error("Fallo al enviar el comando (respuesta API vacía o con error).");
+      }
     
     }catch(e){
-
+      // 4. Si falla la red, revertir y mostrar error
+      mech = { ...mech, [field]: !nextVal };
+      paintStates();
       console.error("Fallo al enviar el comando:", e);
     }finally{
-     busy = false;  
-    
-     refresh();
+      busy = false;
     }
   }
 
   async function stopAll(){
     if (!mech || busy) return;
     busy = true;
-    try{
-      mech = { ...mech, bomba:false, luz:false, ventilador:false };
-      paintStates();
+    
+    // Actualizacion optimista
+    mech = { ...mech, bomba:false, luz:false, ventilador:false };
+    paintStates();
 
+    try{
       const updated = await putMech({ bomba:false, luz:false, ventilador:false });
 
-      if (updated?.__error) {
-        return;
-      }
-      if (updated) {
+      // Usar la respuesta confirmada de la API
+      if (!updated?.__error && updated) {
         mech = { ...mech, ...updated };
         paintStates();
       }
+      
     }catch(e){
+      console.error("Fallo al detener los mecanismos:", e);
     }finally{
       busy = false;
     }
@@ -154,9 +163,9 @@ export default function ActuatorsView(container){
 
   wrap.addEventListener("click", (e)=>{
     if (e.target.closest("#card-luces")) toggle("luz");
-    else if (e.target.closest("#card-vent"))  toggle("ventilador");
+    else if (e.target.closest("#card-vent"))  toggle("ventilador");
     else if (e.target.closest("#card-riego")) toggle("bomba");
-    else if (e.target.closest("#btn-stop"))   stopAll();
+    else if (e.target.closest("#btn-stop"))   stopAll();
   });
 
   // al cambiar de dispositivo limpiar UI y refresca
