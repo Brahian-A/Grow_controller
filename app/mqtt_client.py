@@ -98,16 +98,21 @@ def on_message(client, userdata, msg):
                         _update_mecanismos_from_telemetria(db, esp_id, data)
                 return
 
-            agregar_lectura(
-                esp_id=esp_id,
-                temperatura=float(t),
-                humedad=float(h),
-                humedad_suelo=float(s),
-                nivel_de_agua=float(n),
-            )
-            log.info("Lectura guardada para %s", esp_id)
-
-            # Si vienen flags de actuadores, sincronizamos DB con el estado real
+            try:
+                agregar_lectura(
+                    esp_id=esp_id,
+                    temperatura=float(t),
+                    humedad=float(h),
+                    humedad_suelo=float(s),
+                    nivel_de_agua=float(n),
+                )
+                log.info("Lectura guardada con ÉXITO para %s", esp_id)
+            
+            except Exception as db_err:
+                # Si falla la persistencia, registramos un error
+                log.error("CRÍTICO: Fallo al persistir lectura para %s.", esp_id)
+                log.exception("Detalles del ERROR de DB (IntegrityError o NOT NULL, etc.):") 
+                
             if all(k in data for k in ("riego", "vent", "luz")):
                 with SessionLocal() as db:
                     _update_mecanismos_from_telemetria(db, esp_id, data)
