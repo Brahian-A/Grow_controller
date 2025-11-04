@@ -1,24 +1,25 @@
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
+import sqlite3
 
-# Renombrado para consistencia con la documentación de FastAPI/SQLAlchemy
 SQLALCHEMY_DATABASE_URL = "sqlite:///./app.db"
 
-# --- Configuración del Motor ---
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL,
     echo=False,
     connect_args={
-        "check_same_thread": False, # Necesario para concurrencia de FastAPI
-        "timeout": 30,             # Aumenta el tiempo de espera de bloqueo a 30 segundos
-        "journal_mode": "WAL",     # Habilita el modo Write-Ahead Logging 
-        "synchronous": "NORMAL"    # Optimización de escritura con WAL
+        "check_same_thread": False,
+        "timeout": 30,
     },
     pool_pre_ping=True,
 )
 
+@event.listens_for(engine, "connect")
+def set_sqlite_pragma(dbapi_connection, connection_record):
+    if isinstance(dbapi_connection, sqlite3.Connection):
+        dbapi_connection.execute("PRAGMA journal_mode=WAL")
+        dbapi_connection.execute("PRAGMA synchronous=NORMAL")
 
-# --- Configuración de la Sesión ---
 SessionLocal = sessionmaker(
     autocommit=False,
     autoflush=False,
