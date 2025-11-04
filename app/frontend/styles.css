@@ -402,3 +402,40 @@ body.menu-open #sidebar {
   background: #3fc380;
   border-color: #2ecc71 !important;
 }
+
+.edit-prompt {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 6000;
+  
+  width: 90%;
+  max-width: 400px;
+  
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+  box-shadow: 0 4px 12px rgba(0,0,0,.15);
+}
+
+.edit-prompt input {
+  padding: 10px;
+  border: 1px solid #ccc;
+  border-radius: 10px;
+  width: 100%;
+  margin-bottom: 12px;
+  box-sizing: border-box; 
+  font-size: 16px; 
+}
+
+.edit-prompt .modal-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.edit-prompt .btn-secondary {
+  background: #6b7280;
+}
