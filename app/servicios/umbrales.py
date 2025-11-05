@@ -98,9 +98,9 @@ def procesar_umbrales(db: Session, esp_id: str, lectura: Lectura):
 
     # --- 2. HUMEDAD AMBIENTAL (Ventilador) ---
     # Lógica: Si la humedad ambiente es muy alta, forzar encendido del ventilador.
-    if lectura.humedad is not None and cfg.humedad is not None:
+    if lectura.humedad_ambiente is not None and cfg.humedad is not None:
         try:
-            hum_amb = float(lectura.humedad)
+            hum_amb = float(lectura.humedad_ambiente)
             set_hum_amb = float(cfg.humedad_ambiente)
             
             high_hum_amb = set_hum_amb + margen_hum_amb # Umbral superior para encender ventilador
