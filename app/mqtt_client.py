@@ -31,6 +31,7 @@ def _update_mecanismos_from_telemetria(db: Session, esp_id: str, data: dict):
     if not mech:
         mech = Mecanismos(device_id=d.id)
         db.add(mech)
+        db.flush() # Asegura que el objeto esté listo si es nuevo
 
     new_bomba = (str(data.get("riego")).upper() == "ON")
     new_vent = (str(data.get("vent")).upper() == "ON")
@@ -48,6 +49,8 @@ def _is_num(x):
 
 
 def on_message(client, userdata, msg):
+    """Maneja los mensajes MQTT entrantes."""
+    # Intentar obtener el esp_id y el payload antes de la sesión de DB
     try:
         payload_str = msg.payload.decode(errors="ignore").strip()
         parts = msg.topic.split("/")
@@ -56,18 +59,23 @@ def on_message(client, userdata, msg):
         if not esp_id:
             log.error("No se pudo extraer esp_id del tópico: %s", msg.topic)
             return
+            
+    except Exception as e:
+        log.error("Error al decodificar mensaje o parsear tópico: %s", e)
+        return
 
-        # Inicia la sesión de DB. Se cerrará automáticamente al salir del bloque 'with'.
-        with SessionLocal() as db:
+    # Inicia la sesión de DB. Se cerrará automáticamente al salir del bloque 'with'.
+    with SessionLocal() as db:
+        try:
             # 1. ACTUALIZAR CONTACTO DEL DISPOSITIVO
             d = get_or_create_device(db, esp_id) 
             d.ultimo_contacto = datetime.now(timezone.utc)
+            db.commit() # Commit rápido de último contacto
             
-            # Si el payload no es JSON, solo guarda el contacto y termina.
+            # Si el payload no es JSON, solo termina.
             if not payload_str or not payload_str.startswith("{"):
                 if parts[-1] == "status":
                     log.info("STATUS (simple) %s: %s", esp_id, payload_str)
-                db.commit()
                 return
 
             # 2. PROCESAMIENTO DE JSON
@@ -77,6 +85,7 @@ def on_message(client, userdata, msg):
             # A. Actualizar Mecanismos (si los datos vienen en el payload)
             if all(k in data for k in ("riego", "vent", "luz")):
                 _update_mecanismos_from_telemetria(db, esp_id, data)
+                db.commit() # Commit de la sincronización de mecanismos
 
             # B. Guardar Lectura y Ejecutar Autocontrol (Solo para /telemetria)
             if parts[-1] == "telemetria":
@@ -97,27 +106,31 @@ def on_message(client, userdata, msg):
                         
                         log.info(f"Lectura válida ({t}°C/{s}%). Ejecutando Autocontrol...")
                         
+                        # Ejecutar Autocontrol
                         procesar_umbrales(db, esp_id, nueva_lectura)
-
-                    except Exception:
-                        log.error("CRÍTICO: Fallo al persistir lectura/autocontrol.")
-                        log.exception("Detalles del ERROR de DB:")
+                        
+                        # COMMIT final de la lectura y umbrales.
+                        db.commit() 
+                        
+                    except Exception as e:
+                        log.error("CRÍTICO: Fallo al persistir lectura/autocontrol. Forzando ROLLBACK.")
+                        log.exception("Detalles del ERROR de DB/Umbrales:")
+                        db.rollback() 
+                        
                 else:
                     log.info("Skip lectura %s: Datos de sensor inválidos.", esp_id)
             
-            # Commit final de todas las operaciones dentro de la sesión
-            db.commit()
-            
-    except json.JSONDecodeError:
-        log.error("JSON INVÁLIDO. Topic: %s", msg.topic)
-    except SQLAlchemyError:
-        # En caso de error de DB, hace rollback antes de loguear
-        if 'db' in locals() and db.is_active:
-             db.rollback()
-        log.error("FALLO CRÍTICO DE DB. Se realizó ROLLBACK.")
-        log.exception("Detalles del error:")
-    except Exception as e:
-        log.exception("ERROR inesperado en on_message: %s", e)
+            # La sesión se cerrará automáticamente y se liberará la conexión al salir del 'with'.
+
+        except json.JSONDecodeError:
+            log.error("JSON INVÁLIDO. Topic: %s", msg.topic)
+        except SQLAlchemyError:
+            # Captura errores de sesión/conexión
+            db.rollback() # Asegura rollback si falló antes del commit
+            log.error("FALLO CRÍTICO DE DB. Se realizó ROLLBACK.")
+            log.exception("Detalles del error:")
+        except Exception as e:
+            log.exception("ERROR inesperado en on_message: %s", e)
 
 
 def _on_connect(client, userdata, flags, rc):
@@ -136,7 +149,7 @@ def start_mqtt_listener():
     client.on_message = on_message
     client.on_connect = _on_connect
 
-    setup_mqtt_client(client) # Configuración adicional (si la hay)
+    setup_mqtt_client(client) # Configuración adicional
 
     try:
         client.connect("localhost", 1883, keepalive=25)
