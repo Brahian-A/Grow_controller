@@ -2,7 +2,7 @@ import json
 import math
 import logging
 from datetime import datetime, timezone
-from typing import Optional # No usado, pero mantenido si se usa en otros helpers
+from typing import Optional
 
 import paho.mqtt.client as mqtt
 from sqlalchemy.orm import Session
@@ -117,12 +117,12 @@ def on_message(client, userdata, msg):
                         # ESTA ES LA LÓGICA REEMPLAZADA DE _save_lectura
                         # ----------------------------------------------------
                         nueva_lectura = Lectura(
-                            device_id=d.id, # Reutilizamos el ID del dispositivo 'd'
+                            device_id=d.id,
                             temperatura=float(t),
                             humedad=float(h),
                             humedad_suelo=float(s),
                             nivel_de_agua=float(n),
-                            timestamp=datetime.now(timezone.utc)
+                            fecha_hora=datetime.now(timezone.utc)
                         )
                         db.add(nueva_lectura)
                         # ----------------------------------------------------
