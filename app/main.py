@@ -61,8 +61,6 @@ network={{
 
 # ===== Imports sólo si estamos en NORMAL =====
 if APP_MODE == "NORMAL":
-    from app.db.session import engine  # noqa
-    from app.db.base import Base  # noqa
     from app.api.v1.lecturas import router as lecturas_router  # noqa
     from app.api.v1.config import router as config_router  # noqa
     from app.api.v1.mecanismos import router as mecanismos_router  # noqa
@@ -107,7 +105,6 @@ def create_app() -> FastAPI:
         return app
 
     # ---------- NORMAL: API + front principal ----------
-    Base.metadata.create_all(bind=engine)  # hasta agregar migraciones
 
     #inicia el mosquitto 
     start_mqtt_listener()
