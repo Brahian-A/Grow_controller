@@ -19,10 +19,10 @@ def _puede_cambiar(clave_mecanismo: str) -> bool:
     
     if t is None or (ahora - t) >= timedelta(seconds=_COOLDOWN_S):
         _ultimo_cambio[clave_mecanismo] = ahora
-        logging.info(f"[cooldown] permitido cambio para {clave_mecanismo}.")
+        logging.debug(f"permitido cambio para {clave_mecanismo}.")
         return True
         
-    logging.info(f"[cooldown] negado cambio para {clave_mecanismo}. cooldown activo.")
+    logging.debug(f"negado cambio para {clave_mecanismo}. cooldown activo.")
     return False
 
 def procesar_umbrales(db: Session, esp_id: str, lectura: Lectura):
@@ -52,13 +52,12 @@ def procesar_umbrales(db: Session, esp_id: str, lectura: Lectura):
         margen_base = 0.0
 
     # márgenes específicos
-    margen_temp = min(margen_base, 2.0)     # margen de temperatura, max 2.0°C
-    margen_suelo = max(margen_base, 5.0)    # margen de suelo, min 5.0%
-    margen_hum_amb = max(margen_base, 5.0)  # MARGEN para humedad ambiental
+    margen_temp = min(margen_base, 1.5)  # max 2.0°c
+    margen_suelo = max(margen_base, 5.0) # min 5.0%
 
     cambios = {}
 
-    # --- 1. RIEGO (Humedad de Suelo) ---
+    # --- riego (humedad de suelo) ---
     if lectura.humedad_suelo is not None and cfg.humedad_suelo is not None:
         try:
             suelo = float(lectura.humedad_suelo)
@@ -92,40 +91,12 @@ def procesar_umbrales(db: Session, esp_id: str, lectura: Lectura):
                 else:
                     logging.info(f"[auto-riego] no acción: requiere off, pero ya estaba off o en cooldown.")
             else:
-                logging.info(f"[auto-riego] no acción: humedad está dentro del margen de histéresis ({low_suelo:.1f}% - {high_suelo:.1f}%).")
+                 logging.info(f"[auto-riego] no acción: humedad está dentro del margen de histéresis ({low_suelo:.1f}% - {high_suelo:.1f}%).")
         except ValueError as e:
             logging.error(f"[auto-riego] error de valor: {e}")
 
-    # --- 2. HUMEDAD AMBIENTAL (Ventilador) ---
-    # CORREGIDO: Usamos 'lectura.humedad' y 'cfg.humedad_ambiente'
-    if lectura.humedad is not None and cfg.humedad_ambiente is not None:
-        try:
-            hum_amb = float(lectura.humedad)
-            set_hum_amb = float(cfg.humedad_ambiente)
-            
-            high_hum_amb = set_hum_amb + margen_hum_amb # Umbral superior para encender ventilador
-            
-            key_vent = f"{esp_id}:vent" # Reusamos la misma clave de cooldown
-            
-            logging.info(f"[auto-hum] l: {hum_amb:.1f}%. set: {set_hum_amb:.1f}%. umbral: high={high_hum_amb:.1f}%. actual: {'on' if mech.ventilador else 'off'}")
 
-            if hum_amb > high_hum_amb:
-                # Humedad ambiental alta -> forzar ventilador ON
-                if not mech.ventilador and _puede_cambiar(key_vent):
-                    enviar_cmd_mqtt({"cmd": "SET", "target": "VENT", "value": "ON"}, esp_id)
-                    mech.ventilador = True
-                    cambios["ventilador"] = "ON"
-                    logging.info(f"[auto-hum] acción: humedad ambiente ({hum_amb:.1f}%) > high ({high_hum_amb:.1f}%). se ha encendido ventilador.")
-                else:
-                    logging.info(f"[auto-hum] no acción: requiere vent on, pero ya estaba on o en cooldown.")
-
-            # Nota: El apagado por humedad ambiente se maneja en la lógica de temperatura.
-            
-        except ValueError as e:
-            logging.error(f"[auto-hum] error de valor: {e}")
-
-    # --- 3. TEMPERATURA (Ventilador y Luz-Calor) ---
-    # Lógica: Maximizar la Luz (ON) para el crecimiento. Solo apagar la luz si la temperatura es crítica.
+    # --- temperatura (ventilador / luz calor) ---
     if lectura.temperatura is not None and cfg.temperatura is not None:
         try:
             temp = float(lectura.temperatura)
@@ -133,7 +104,7 @@ def procesar_umbrales(db: Session, esp_id: str, lectura: Lectura):
             
             # cálculo de umbrales con histéresis
             low_temp  = set_temp - margen_temp # umbral inferior para calentar (luz on)
-            high_temp = set_temp + margen_temp # umbral superior para enfriar (ventilador on/luz off)
+            high_temp = set_temp + margen_temp # umbral superior para enfriar (ventilador on)
 
             key_vent = f"{esp_id}:vent"
             key_luz = f"{esp_id}:luz"
@@ -142,63 +113,53 @@ def procesar_umbrales(db: Session, esp_id: str, lectura: Lectura):
 
 
             if temp > high_temp:
-                # 1. HACE CALOR: Objetivo enfriar -> Vent ON, Luz OFF (solo si es necesario)
+                # hace calor: objetivo enfriar -> ventilador on, luz off
                 logging.info(f"[auto-temp] enfriando. temp ({temp:.1f}°c) > high ({high_temp:.1f}°c).")
                 
-                # Accion Ventilador: debe estar ON (si no lo activó ya la humedad)
+                # accion ventilador
                 if not mech.ventilador and _puede_cambiar(key_vent):
                     enviar_cmd_mqtt({"cmd": "SET", "target": "VENT", "value": "ON"}, esp_id)
                     mech.ventilador = True
                     cambios["ventilador"] = "ON"
-                    logging.info("[auto-temp] acción: Vent ON.")
+                    logging.info("[auto-temp] acción: vent on.")
                 elif mech.ventilador:
-                    logging.info("[auto-temp] no acción: Vent ya estaba ON.")
+                     logging.info("[auto-temp] no acción: vent ya estaba on.")
                     
-                # Accion Luz: Se APAGA SOLO AQUÍ para evitar el sobrecalentamiento.
+                # accion luz (para calentar)
                 if mech.luz and _puede_cambiar(key_luz):
                     enviar_cmd_mqtt({"cmd": "SET", "target": "LUZ", "value": "OFF"}, esp_id)
                     mech.luz = False
                     cambios["luz"] = "OFF"
-                    logging.info("[auto-temp] acción: Luz OFF para enfriar.")
+                    logging.info("[auto-temp] acción: luz off.")
                 elif not mech.luz:
-                    logging.info("[auto-temp] no acción: Luz ya estaba OFF.")
+                     logging.info("[auto-temp] no acción: luz ya estaba off.")
 
             elif temp < low_temp:
-                # 2. HACE FRÍO: Objetivo calentar -> Vent OFF, Luz ON
+                # hace frio: objetivo calentar -> ventilador off, luz on
                 logging.info(f"[auto-temp] calentando. temp ({temp:.1f}°c) < low ({low_temp:.1f}°c).")
                 
-                # Accion Ventilador: Se APAGA para calentar.
+                # accion ventilador
                 if mech.ventilador and _puede_cambiar(key_vent):
                     enviar_cmd_mqtt({"cmd": "SET", "target": "VENT", "value": "OFF"}, esp_id)
                     mech.ventilador = False
                     cambios["ventilador"] = "OFF"
-                    logging.info("[auto-temp] acción: Vent OFF para calentar.")
+                    logging.info("[auto-temp] acción: vent off.")
                 elif not mech.ventilador:
-                    logging.info("[auto-temp] no acción: Vent ya estaba OFF.")
+                    logging.info("[auto-temp] no acción: vent ya estaba off.")
                     
-                # Accion Luz: Se ENCIENDE para calentar y para el crecimiento.
+                # accion luz
                 if not mech.luz and _puede_cambiar(key_luz):
                     enviar_cmd_mqtt({"cmd": "SET", "target": "LUZ", "value": "ON"}, esp_id)
                     mech.luz = True
                     cambios["luz"] = "ON"
-                    logging.info("[auto-temp] acción: Luz ON para calentar y crecer.")
+                    logging.info("[auto-temp] acción: luz on.")
                 elif mech.luz:
-                    logging.info("[auto-temp] no acción: Luz ya estaba ON.")
+                    logging.info("[auto-temp] no acción: luz ya estaba on.")
 
             else:
-                # 3. ZONA DE HISTÉRESIS (low_temp <= temp <= high_temp): Prioridad a la Luz
-                logging.info("[auto-temp] zona ideal. mantener luz ON para crecimiento.")
+                # zona de histéresis: no hacer nada (mantener estado)
+                logging.info("[auto-temp] no acción: temperatura está dentro del margen de histéresis ({low_temp:.1f}°c - {high_temp:.1f}°c).")
 
-                # Accion Luz: SIEMPRE debe estar ON en este rango.
-                if not mech.luz and _puede_cambiar(key_luz):
-                    enviar_cmd_mqtt({"cmd": "SET", "target": "LUZ", "value": "ON"}, esp_id)
-                    mech.luz = True
-                    cambios["luz"] = "ON"
-                    logging.info("[auto-temp] acción: Luz ON (crecimiento).")
-                
-                # Accion Ventilador: Mantiene el estado que tenía al entrar en la histéresis.
-                logging.info(f"[auto-temp] no acción: vent mantiene estado ('{'on' if mech.ventilador else 'off'}).")
-                logging.info(f"[auto-temp] no acción: temp dentro del margen de histéresis ({low_temp:.1f}°c - {high_temp:.1f}°c).")
             
         except ValueError as e:
             logging.error(f"[auto-temp] error de valor: {e}")
