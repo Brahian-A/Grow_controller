@@ -40,7 +40,6 @@ def _update_mecanismos_from_telemetria(db: Session, esp_id: str, data: dict):
     new_vent = (str(data.get("vent")).upper() == "ON")
     new_luz = (str(data.get("luz")).upper() == "ON")
 
-    # Comprobamos si hay CAMBIOS REALES para evitar un commit innecesario
     if mech.bomba == new_bomba and mech.ventilador == new_vent and mech.luz == new_luz:
         log.debug("Mecanismos de %s sin cambios", esp_id)
         return
@@ -53,7 +52,6 @@ def _update_mecanismos_from_telemetria(db: Session, esp_id: str, data: dict):
     mech.luz = new_luz
 
     try:
-        # Commit con manejo de errores, crucial para SQLite
         db.commit()
         log.info("MECANISMOS actualizados con éxito en DB para %s.", esp_id)
     except SQLAlchemyError as e:
@@ -69,57 +67,67 @@ def _is_num(x):
 def on_message(client, userdata, msg):
     try:
         payload_str = msg.payload.decode(errors="ignore").strip()
-        data = json.loads(payload_str) if payload_str else {}
         parts = msg.topic.split("/")
-        esp_id = data.get("esp_id") or (parts[1] if len(parts) >= 2 else None)
+        
+        # Intentamos obtener el esp_id solo del tópico, es más seguro
+        esp_id = parts[1] if len(parts) >= 2 else None
         if not esp_id:
-            log.error("Mensaje sin esp_id en payload o tópico. topic=%s payload=%s", msg.topic, payload_str)
+            log.error("No se pudo extraer esp_id del tópico: %s", msg.topic)
             return
 
         # ============================================================
-        # 1. ACTUALIZACIÓN DE CONTACTO (Para todos los mensajes con esp_id)
+        # 1. LÓGICA DE STATUS (Maneja "online" o JSON de actuadores)
         # ============================================================
-        with SessionLocal() as db:
-            d = get_or_create_device(db, esp_id) 
-            d.ultimo_contacto = datetime.now(timezone.utc)
-            db.commit()
-
-        # ============================================================
-        # 2. PROCESAMIENTO DE ESTADO y TELEMETRÍA (Corrección aquí)
-        # ============================================================
-        
-        # Verificamos si el payload tiene datos de actuadores (riego, vent, luz)
-        has_actuator_data = all(k in data for k in ("riego", "vent", "luz"))
-
         if parts[-1] == "status":
-            # Si el mensaje /status contiene datos de actuadores (el snapshot)
+            # Actualizamos el último contacto
+            with SessionLocal() as db:
+                d = get_or_create_device(db, esp_id) 
+                d.ultimo_contacto = datetime.now(timezone.utc)
+                db.commit()
+
+            # Solo intentamos decodificar JSON si parece un JSON
+            if payload_str and payload_str.startswith("{"):
+                data = json.loads(payload_str)
+                has_actuator_data = all(k in data for k in ("riego", "vent", "luz"))
+                
+                if has_actuator_data:
+                    log.info("STATUS_ACTUADORES %s: Actualizando Mecanismos.", esp_id)
+                    with SessionLocal() as db:
+                        _update_mecanismos_from_telemetria(db, esp_id, data)
+                else:
+                    log.info("STATUS (JSON no actuador) %s: %s", esp_id, payload_str)
+            else:
+                # Es el string "online" o "offline", lo cual es normal
+                log.info("STATUS (simple) %s: %s", esp_id, payload_str)
+            
+            return # Terminamos, era un mensaje de status
+
+        # ============================================================
+        # 2. LÓGICA DE TELEMETRÍA (Debe ser JSON)
+        # ============================================================
+        if parts[-1] == "telemetria":
+            # Aquí sí es obligatorio que sea JSON
+            data = json.loads(payload_str)
+            
+            # Re-extraemos esp_id por si viene en el payload (como en tu código original)
+            esp_id = data.get("esp_id") or esp_id 
+            
+            has_actuator_data = all(k in data for k in ("riego", "vent", "luz"))
             if has_actuator_data:
-                log.info("STATUS_ACTUADORES %s: Actualizando Mecanismos inmediatamente.", esp_id)
                 with SessionLocal() as db:
                     _update_mecanismos_from_telemetria(db, esp_id, data)
-            else:
-                # Es el mensaje simple 'online'/'offline' o un status sin actuadores
-                log.info("STATUS %s: %s", esp_id, payload_str)
-                return # Aquí sí salimos, ya que no hay que actualizar mecanismos ni lecturas.
-
-        # PROCESAMIENTO DE TELEMETRÍA (Solo si es /telemetria)
-        if parts[-1] == "telemetria" and has_actuator_data: 
-            with SessionLocal() as db:
-                _update_mecanismos_from_telemetria(db, esp_id, data) 
             
             t = data.get("temp_c")
             h = data.get("hum_amb")
             s = data.get("suelo_pct")
             n = data.get("nivel_pct")
 
-            # Comprobar la validez de los datos antes de guardarlos como lectura
             valid_sensores = (_is_num(t) and _is_num(h) and _is_num(s) and _is_num(n))
 
             if not valid_sensores:
                 log.info("Skip lectura %s: Datos de sensor inválidos (T:%s, H:%s, S:%s, N:%s)", esp_id, t, h, s, n)
                 return
 
-            # Persistir Lectura
             try:
                 agregar_lectura(
                     esp_id=esp_id,
@@ -139,7 +147,8 @@ def on_message(client, userdata, msg):
         log.debug("Mensaje ignorado topic=%s payload=%s", msg.topic, payload_str)
 
     except json.JSONDecodeError:
-        log.error("Payload de MQTT no es JSON válido. topic=%s payload=%s", msg.topic, msg.payload[:200])
+        # Esto ahora solo debería saltar si /telemetria es inválida
+        log.error("Payload de MQTT no es JSON válido. topic=%s payload=%s", msg.topic, payload_str)
     except Exception as e:
         log.exception("ERROR inesperado en on_message: %s", e)
 
