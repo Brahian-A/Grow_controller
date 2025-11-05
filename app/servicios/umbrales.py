@@ -5,92 +5,95 @@ from sqlalchemy.orm import Session
 from app.db.models import Device, Config, Mecanismos, Lectura 
 from app.servicios.mqtt_funciones import enviar_cmd_mqtt
 
-# Configuración del logging
+# configuración del logging.
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# --- Variables Globales y Función de Cooldown ---
-_COOLDOWN_S = 30
+# --- variables globales y función de cooldown ---
+_COOLDOWN_S = 30 # segundos mínimos entre cambios de estado.
 _ultimo_cambio = {}
 
 def _puede_cambiar(clave_mecanismo: str) -> bool:
-    """
-    Verifica si ha pasado suficiente tiempo (_COOLDOWN_S) desde el último cambio 
-    para un mecanismo específico (ej: "esp_id:riego"). 
-    Si puede cambiar, actualiza el tiempo y retorna True.
-    """
+    """verifica si ha pasado el tiempo de cooldown desde el último cambio."""
     ahora = datetime.utcnow()
     t = _ultimo_cambio.get(clave_mecanismo)
     
     if t is None or (ahora - t) >= timedelta(seconds=_COOLDOWN_S):
         _ultimo_cambio[clave_mecanismo] = ahora
-        logging.debug(f"Permitido cambio para {clave_mecanismo}.")
+        logging.debug(f"permitido cambio para {clave_mecanismo}.")
         return True
         
-    logging.debug(f"Negado cambio para {clave_mecanismo}. Cooldown activo.")
+    logging.debug(f"negado cambio para {clave_mecanismo}. cooldown activo.")
     return False
 
 def procesar_umbrales(db: Session, esp_id: str, lectura: Lectura):
-    """
-    Aplica la lógica de control automático (umbral + histéresis de margen y tiempo)
-    basada en la última lectura de telemetría y la configuración del dispositivo.
-    """
+    """aplica la lógica de control automático (histéresis y cooldown)."""
     device = db.query(Device).filter(Device.esp_id == esp_id).first()
     if not device:
-        logging.warning(f"[AUTO] Dispositivo {esp_id} no encontrado.")
+        logging.warning(f"[auto] dispositivo {esp_id} no encontrado.")
         return
 
     cfg = db.query(Config).filter(Config.device_id == device.id).first()
     if not cfg:
-        logging.warning(f"[AUTO] Configuración no encontrada para {esp_id}.")
+        logging.warning(f"[auto] configuración no encontrada para {esp_id}.")
         return
 
-    # Obtener/Crear estado de Mecanismos
+    # obtener o crear estado de mecanismos
     mech = db.query(Mecanismos).filter(Mecanismos.device_id == device.id).first()
     if not mech:
         mech = Mecanismos(device_id=device.id)
         db.add(mech)
-        db.commit()
-        db.refresh(mech)
+        # el commit lo maneja el mqtt_listener
 
     try:
+        # margen de histéresis base
         margen_base = float(cfg.margen or 0)
     except ValueError:
-        logging.error(f"[AUTO] El margen '{cfg.margen}' no es un número válido.")
+        logging.error(f"[auto] el margen '{cfg.margen}' no es un número válido.")
         margen_base = 0.0
 
-    margen_temp = min(margen_base, 2.0)  # Máximo 2.0°C de margen
-    margen_suelo = max(margen_base, 5.0) # Mínimo 5.0% de margen
+    # márgenes específicos
+    margen_temp = min(margen_base, 2.0)  # max 2.0°c
+    margen_suelo = max(margen_base, 5.0) # min 5.0%
 
     cambios = {}
 
-    # --- RIEGO (humedad de suelo) ---
+    # --- riego (humedad de suelo) ---
     if lectura.humedad_suelo is not None and cfg.humedad_suelo is not None:
         try:
             suelo = float(lectura.humedad_suelo)
             set_suelo = float(cfg.humedad_suelo)
-            low_suelo  = set_suelo - margen_suelo
-            high_suelo = set_suelo + margen_suelo
+            
+            # cálculo de umbrales con histéresis
+            low_suelo  = set_suelo - margen_suelo # umbral inferior para encender
+            high_suelo = set_suelo + margen_suelo # umbral superior para apagar
             
             mecanismo_key = f"{esp_id}:riego"
 
+            logging.info(f"[auto-riego] l: {suelo:.1f}%. set: {set_suelo:.1f}%. umbrales: low={low_suelo:.1f}%, high={high_suelo:.1f}%. actual: {'on' if mech.bomba else 'off'}")
+
+
             if suelo < low_suelo:
-                # El suelo está seco y la bomba está apagada -> ENCENDER
+                # suelo seco -> encender bomba
                 if not mech.bomba and _puede_cambiar(mecanismo_key):
-                    # CORREGIDO: cmd dict primero, esp_id segundo
                     enviar_cmd_mqtt({"cmd": "SET", "target": "RIEGO", "value": "ON"}, esp_id)
                     mech.bomba = True
                     cambios["riego"] = "ON"
-                    logging.info(f"[AUTO-RIEGO] Humedad ({suelo:.1f}%) < LOW ({low_suelo:.1f}%). ON.")
+                    logging.info(f"[auto-riego] acción: humedad ({suelo:.1f}%) < low ({low_suelo:.1f}%). se ha encendido riego.")
+                else:
+                    logging.info(f"[auto-riego] no acción: requiere on, pero ya estaba on o en cooldown.")
             elif suelo > high_suelo:
-                # El suelo está muy húmedo y la bomba está encendida -> APAGAR
+                # suelo muy húmedo -> apagar bomba
                 if mech.bomba and _puede_cambiar(mecanismo_key):
-                    # CORREGIDO: cmd dict primero, esp_id segundo
                     enviar_cmd_mqtt({"cmd": "SET", "target": "RIEGO", "value": "OFF"}, esp_id)
                     mech.bomba = False
                     cambios["riego"] = "OFF"
-                    logging.info(f"[AUTO-RIEGO] Humedad ({suelo:.1f}%) > HIGH ({high_suelo:.1f}%). OFF.")
+                    logging.info(f"[auto-riego] acción: humedad ({suelo:.1f}%) > high ({high_suelo:.1f}%). se ha apagado riego.")
+                else:
+                    logging.info(f"[auto-riego] no acción: requiere off, pero ya estaba off o en cooldown.")
+            else:
+                 logging.info(f"[auto-riego] no acción: humedad está dentro del margen de histéresis ({low_suelo:.1f}% - {high_suelo:.1f}%).")
         except ValueError as e:
-            logging.error(f"[AUTO-RIEGO] Error de valor: {e}")
+            logging.error(f"[auto-riego] error de valor: {e}")
 
 
     # --- temperatura (ventilador / luz calor) ---
@@ -98,68 +101,72 @@ def procesar_umbrales(db: Session, esp_id: str, lectura: Lectura):
         try:
             temp = float(lectura.temperatura)
             set_temp = float(cfg.temperatura)
-            low_temp  = set_temp - margen_temp
-            high_temp = set_temp + margen_temp
+            
+            # cálculo de umbrales con histéresis
+            low_temp  = set_temp - margen_temp # umbral inferior para calentar (luz on)
+            high_temp = set_temp + margen_temp # umbral superior para enfriar (ventilador on)
 
             key_vent = f"{esp_id}:vent"
             key_luz = f"{esp_id}:luz"
 
+            logging.info(f"[auto-temp] l: {temp:.1f}°c. set: {set_temp:.1f}°c. umbrales: low={low_temp:.1f}°c, high={high_temp:.1f}°c. actual: v={'on' if mech.ventilador else 'off'}, l={'on' if mech.luz else 'off'}")
+
+
             if temp > high_temp:
-                # hace calor: ventilador ON, luz OFF
-                logging.debug(f"[AUTO-TEMP] Temp ({temp:.1f}°C) > HIGH ({high_temp:.1f}°C). Enfriando...")
-                hizo_cambio = False
+                # hace calor: objetivo enfriar -> ventilador on, luz off
+                logging.info(f"[auto-temp] enfriando. temp ({temp:.1f}°c) > high ({high_temp:.1f}°c).")
                 
+                # accion ventilador
                 if not mech.ventilador and _puede_cambiar(key_vent):
-                    # CORREGIDO: cmd dict primero, esp_id segundo
                     enviar_cmd_mqtt({"cmd": "SET", "target": "VENT", "value": "ON"}, esp_id)
                     mech.ventilador = True
                     cambios["ventilador"] = "ON"
-                    hizo_cambio = True
-                    logging.info("[AUTO-TEMP] VENT ON.")
+                    logging.info("[auto-temp] acción: vent on.")
+                elif mech.ventilador:
+                     logging.info("[auto-temp] no acción: vent ya estaba on.")
                     
+                # accion luz (para calentar)
                 if mech.luz and _puede_cambiar(key_luz):
-                    # CORREGIDO: cmd dict primero, esp_id segundo
                     enviar_cmd_mqtt({"cmd": "SET", "target": "LUZ", "value": "OFF"}, esp_id)
                     mech.luz = False
                     cambios["luz"] = "OFF"
-                    hizo_cambio = True
-                    logging.info("[AUTO-TEMP] LUZ OFF.")
-                
-                if not hizo_cambio and (not mech.ventilador and not mech.luz):
-                    _ultimo_cambio[key_vent] = datetime.utcnow()
-                    _ultimo_cambio[key_luz] = datetime.utcnow()
+                    logging.info("[auto-temp] acción: luz off.")
+                elif not mech.luz:
+                     logging.info("[auto-temp] no acción: luz ya estaba off.")
 
             elif temp < low_temp:
-                # hace frio: ventilador OFF, luz ON
-                logging.debug(f"[AUTO-TEMP] Temp ({temp:.1f}°C) < LOW ({low_temp:.1f}°C). Calentando...")
-                hizo_cambio = False
+                # hace frio: objetivo calentar -> ventilador off, luz on
+                logging.info(f"[auto-temp] calentando. temp ({temp:.1f}°c) < low ({low_temp:.1f}°c).")
                 
+                # accion ventilador
                 if mech.ventilador and _puede_cambiar(key_vent):
-                    # CORREGIDO: cmd dict primero, esp_id segundo
                     enviar_cmd_mqtt({"cmd": "SET", "target": "VENT", "value": "OFF"}, esp_id)
                     mech.ventilador = False
                     cambios["ventilador"] = "OFF"
-                    hizo_cambio = True
-                    logging.info("[AUTO-TEMP] VENT OFF.")
+                    logging.info("[auto-temp] acción: vent off.")
+                elif not mech.ventilador:
+                    logging.info("[auto-temp] no acción: vent ya estaba off.")
                     
+                # accion luz
                 if not mech.luz and _puede_cambiar(key_luz):
-                    # CORREGIDO: cmd dict primero, esp_id segundo
                     enviar_cmd_mqtt({"cmd": "SET", "target": "LUZ", "value": "ON"}, esp_id)
                     mech.luz = True
                     cambios["luz"] = "ON"
-                    hizo_cambio = True
-                    logging.info("[AUTO-TEMP] LUZ ON.")
-                    
-                if not hizo_cambio and (mech.ventilador and mech.luz):
-                    _ultimo_cambio[key_vent] = datetime.utcnow()
-                    _ultimo_cambio[key_luz] = datetime.utcnow()
+                    logging.info("[auto-temp] acción: luz on.")
+                elif mech.luz:
+                    logging.info("[auto-temp] no acción: luz ya estaba on.")
+
+            else:
+                # zona de histéresis: no hacer nada (mantener estado)
+                logging.info("[auto-temp] no acción: temperatura está dentro del margen de histéresis ({low_temp:.1f}°c - {high_temp:.1f}°c).")
 
             
         except ValueError as e:
-            logging.error(f"[AUTO-TEMP] Error de valor: {e}")
+            logging.error(f"[auto-temp] error de valor: {e}")
 
+    # notificar si hubo cambios
     if cambios:
-        db.commit()
-        logging.info(f"[AUTO CONTROL] {esp_id} → CAMBIOS EFECTUADOS: {cambios}")
+        # nota: el commit se hará en el mqtt_listener.py
+        logging.info(f"[auto control] {esp_id} → cambios propuestos: {cambios}")
     else:
-        logging.debug(f"[AUTO CONTROL] {esp_id} → No se requirieron cambios de estado.")
+        logging.info(f"[auto control] {esp_id} → no se requirieron cambios de estado.")
