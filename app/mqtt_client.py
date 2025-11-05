@@ -11,7 +11,7 @@ from app.db.session import SessionLocal
 from app.db.models import Lectura, Device, Mecanismos
 from app.servicios.mqtt_funciones import setup_mqtt_client
 from app.servicios.devices import get_or_create_device
-from app.servicios.autocontrol import procesar_umbrales
+from app.servicios.umbrales import procesar_umbrales
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 log = logging.getLogger("mqtt-listener")
