@@ -11,7 +11,6 @@ from app.db.session import SessionLocal
 from app.db.models import Lectura, Device, Mecanismos
 from app.servicios.funciones import agregar_lectura
 from app.servicios.mqtt_funciones import setup_mqtt_client
-from app.servicios.umbrales import procesar_umbrales
 from app.servicios.devices import get_or_create_device
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -69,54 +68,48 @@ def on_message(client, userdata, msg):
         payload_str = msg.payload.decode(errors="ignore").strip()
         parts = msg.topic.split("/")
         
-        # Intentamos obtener el esp_id solo del tópico, es más seguro
         esp_id = parts[1] if len(parts) >= 2 else None
         if not esp_id:
             log.error("No se pudo extraer esp_id del tópico: %s", msg.topic)
             return
+            
+        # Actualización de contacto (se hace para cualquier mensaje)
+        with SessionLocal() as db:
+            d = get_or_create_device(db, esp_id) 
+            d.ultimo_contacto = datetime.now(timezone.utc)
+            db.commit()
 
         # ============================================================
-        # 1. LÓGICA DE STATUS (Maneja "online" o JSON de actuadores)
+        # 1. VERIFICACIÓN DE JSON
         # ============================================================
-        if parts[-1] == "status":
-            # Actualizamos el último contacto
-            with SessionLocal() as db:
-                d = get_or_create_device(db, esp_id) 
-                d.ultimo_contacto = datetime.now(timezone.utc)
-                db.commit()
-
-            # Solo intentamos decodificar JSON si parece un JSON
-            if payload_str and payload_str.startswith("{"):
-                data = json.loads(payload_str)
-                has_actuator_data = all(k in data for k in ("riego", "vent", "luz"))
-                
-                if has_actuator_data:
-                    log.info("STATUS_ACTUADORES %s: Actualizando Mecanismos.", esp_id)
-                    with SessionLocal() as db:
-                        _update_mecanismos_from_telemetria(db, esp_id, data)
-                else:
-                    log.info("STATUS (JSON no actuador) %s: %s", esp_id, payload_str)
-            else:
-                # Es el string "online" o "offline", lo cual es normal
+        # Si no es un JSON (ej. "online", "offline", o payload vacío), 
+        # lo logueamos y salimos.
+        if not payload_str or not payload_str.startswith("{"):
+            if parts[-1] == "status":
                 log.info("STATUS (simple) %s: %s", esp_id, payload_str)
-            
-            return # Terminamos, era un mensaje de status
+            else:
+                log.warning("Payload no-JSON ignorado. Topic: %s", msg.topic)
+            return
 
         # ============================================================
-        # 2. LÓGICA DE TELEMETRÍA (Debe ser JSON)
+        # 2. PROCESAMIENTO DE JSON (Solo si pasó el filtro anterior)
         # ============================================================
+        
+        # Ahora es seguro intentar decodificar
+        data = json.loads(payload_str)
+        
+        # Re-extraemos esp_id por si viene en el payload (como en tu código original)
+        esp_id = data.get("esp_id") or esp_id 
+
+        # A. Actualizar Mecanismos (si el payload los trae)
+        has_actuator_data = all(k in data for k in ("riego", "vent", "luz"))
+        if has_actuator_data:
+            log.info("Actualizando mecanismos desde Topic: %s", parts[-1])
+            with SessionLocal() as db:
+                _update_mecanismos_from_telemetria(db, esp_id, data)
+
+        # B. Guardar Lectura (Solo si es /telemetria)
         if parts[-1] == "telemetria":
-            # Aquí sí es obligatorio que sea JSON
-            data = json.loads(payload_str)
-            
-            # Re-extraemos esp_id por si viene en el payload (como en tu código original)
-            esp_id = data.get("esp_id") or esp_id 
-            
-            has_actuator_data = all(k in data for k in ("riego", "vent", "luz"))
-            if has_actuator_data:
-                with SessionLocal() as db:
-                    _update_mecanismos_from_telemetria(db, esp_id, data)
-            
             t = data.get("temp_c")
             h = data.get("hum_amb")
             s = data.get("suelo_pct")
@@ -125,7 +118,7 @@ def on_message(client, userdata, msg):
             valid_sensores = (_is_num(t) and _is_num(h) and _is_num(s) and _is_num(n))
 
             if not valid_sensores:
-                log.info("Skip lectura %s: Datos de sensor inválidos (T:%s, H:%s, S:%s, N:%s)", esp_id, t, h, s, n)
+                log.info("Skip lectura %s: Datos de sensor inválidos.", esp_id)
                 return
 
             try:
@@ -144,11 +137,9 @@ def on_message(client, userdata, msg):
             
             return
 
-        log.debug("Mensaje ignorado topic=%s payload=%s", msg.topic, payload_str)
-
     except json.JSONDecodeError:
-        # Esto ahora solo debería saltar si /telemetria es inválida
-        log.error("Payload de MQTT no es JSON válido. topic=%s payload=%s", msg.topic, payload_str)
+        # El "JSON Inválido" solo saltará si el payload EMPIEZA con { pero es corrupto
+        log.error("JSON INVÁLIDO. Topic: %s, Payload: %s", msg.topic, payload_str[:200])
     except Exception as e:
         log.exception("ERROR inesperado en on_message: %s", e)
 
