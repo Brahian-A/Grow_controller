@@ -2,6 +2,7 @@ import json
 import math
 import logging
 from datetime import datetime, timezone
+from typing import Optional
 
 import paho.mqtt.client as mqtt
 from sqlalchemy.orm import Session
@@ -9,9 +10,9 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.db.session import SessionLocal
 from app.db.models import Lectura, Device, Mecanismos
-from app.servicios.funciones import agregar_lectura
 from app.servicios.mqtt_funciones import setup_mqtt_client
 from app.servicios.devices import get_or_create_device
+from app.servicios.umbrales import procesar_umbrales
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 log = logging.getLogger("mqtt-listener")
@@ -22,7 +23,8 @@ MQTT_STATUS_TOPIC = "invernaderos/+/status"
 
 def _update_mecanismos_from_telemetria(db: Session, esp_id: str, data: dict):
     """
-    Persiste el estado REAL de los mecanismos reportado por el ESP32 en la DB.
+    Persiste el estado REAL de los mecanismos reportado por el ESP32 en la DB
+    usando la sesión de DB existente.
     """
     d = db.query(Device).filter(Device.esp_id == esp_id).first()
     if not d:
@@ -34,6 +36,7 @@ def _update_mecanismos_from_telemetria(db: Session, esp_id: str, data: dict):
         log.info("CREANDO registro Mecanismos para %s", esp_id)
         mech = Mecanismos(device_id=d.id)
         db.add(mech)
+        # No hacemos commit aquí, se hará al final de on_message
 
     new_bomba = (str(data.get("riego")).upper() == "ON")
     new_vent = (str(data.get("vent")).upper() == "ON")
@@ -44,24 +47,40 @@ def _update_mecanismos_from_telemetria(db: Session, esp_id: str, data: dict):
         return
         
     log.info("SINCRONIZANDO estado de Mecanismos para %s. B:%s -> %s", 
-             esp_id, mech.bomba, new_bomba)
+              esp_id, mech.bomba, new_bomba)
 
     mech.bomba = new_bomba
     mech.ventilador = new_vent
     mech.luz = new_luz
-
-    try:
-        db.commit()
-        log.info("MECANISMOS actualizados con éxito en DB para %s.", esp_id)
-    except SQLAlchemyError as e:
-        db.rollback()
-        log.error("FALLO CRÍTICO DE COMMIT en Mecanismos para %s.", esp_id)
-        log.exception("Detalles del error:")
-
+    # No hacemos commit, se propaga al commit final
 
 def _is_num(x):
     return isinstance(x, (int, float)) and not (isinstance(x, float) and math.isnan(x))
 
+def _save_lectura(db: Session, esp_id: str, t, h, s, n) -> Optional[Lectura]:
+    """Crea y añade el objeto Lectura a la sesión de DB."""
+    try:
+        device = db.query(Device).filter(Device.esp_id == esp_id).first()
+        if not device:
+             log.error("CRÍTICO: Dispositivo no encontrado durante _save_lectura.")
+             return None
+        
+        # Crear la Lectura con los datos validados
+        nueva_lectura = Lectura(
+            device_id=device.id,
+            temperatura=float(t),
+            humedad=float(h),
+            humedad_suelo=float(s),
+            nivel_de_agua=float(n),
+            timestamp=datetime.now(timezone.utc)
+        )
+        db.add(nueva_lectura)
+        # Importante: No se hace commit aquí, se hace al final de on_message
+        return nueva_lectura
+    except Exception as e:
+        log.error("CRÍTICO: Fallo al crear objeto Lectura en sesión.")
+        log.exception("Detalles del ERROR de DB:")
+        return None
 
 def on_message(client, userdata, msg):
     try:
@@ -72,74 +91,71 @@ def on_message(client, userdata, msg):
         if not esp_id:
             log.error("No se pudo extraer esp_id del tópico: %s", msg.topic)
             return
-            
-        # Actualización de contacto (se hace para cualquier mensaje)
+
+        # ============================================================
+        # 1. MANEJO DE SESIÓN DB y CONTACTO
+        # Se usa una única sesión para todo el procesamiento
+        # ============================================================
         with SessionLocal() as db:
             d = get_or_create_device(db, esp_id) 
             d.ultimo_contacto = datetime.now(timezone.utc)
-            db.commit()
+            # No se hace commit aún.
 
-        # ============================================================
-        # 1. VERIFICACIÓN DE JSON
-        # ============================================================
-        # Si no es un JSON (ej. "online", "offline", o payload vacío), 
-        # lo logueamos y salimos.
-        if not payload_str or not payload_str.startswith("{"):
-            if parts[-1] == "status":
-                log.info("STATUS (simple) %s: %s", esp_id, payload_str)
-            else:
-                log.warning("Payload no-JSON ignorado. Topic: %s", msg.topic)
-            return
-
-        # ============================================================
-        # 2. PROCESAMIENTO DE JSON (Solo si pasó el filtro anterior)
-        # ============================================================
-        
-        # Ahora es seguro intentar decodificar
-        data = json.loads(payload_str)
-        
-        # Re-extraemos esp_id por si viene en el payload (como en tu código original)
-        esp_id = data.get("esp_id") or esp_id 
-
-        # A. Actualizar Mecanismos (si el payload los trae)
-        has_actuator_data = all(k in data for k in ("riego", "vent", "luz"))
-        if has_actuator_data:
-            log.info("Actualizando mecanismos desde Topic: %s", parts[-1])
-            with SessionLocal() as db:
-                _update_mecanismos_from_telemetria(db, esp_id, data)
-
-        # B. Guardar Lectura (Solo si es /telemetria)
-        if parts[-1] == "telemetria":
-            t = data.get("temp_c")
-            h = data.get("hum_amb")
-            s = data.get("suelo_pct")
-            n = data.get("nivel_pct")
-
-            valid_sensores = (_is_num(t) and _is_num(h) and _is_num(s) and _is_num(n))
-
-            if not valid_sensores:
-                log.info("Skip lectura %s: Datos de sensor inválidos.", esp_id)
+            # Si no es un JSON (ej. "online", "offline")
+            if not payload_str or not payload_str.startswith("{"):
+                if parts[-1] == "status":
+                    log.info("STATUS (simple) %s: %s", esp_id, payload_str)
+                else:
+                    log.warning("Payload no-JSON ignorado. Topic: %s", msg.topic)
+                db.commit() # Solo commitamos el ultimo_contacto
                 return
 
-            try:
-                agregar_lectura(
-                    esp_id=esp_id,
-                    temperatura=float(t),
-                    humedad=float(h),
-                    humedad_suelo=float(s),
-                    nivel_de_agua=float(n),
-                )
-                log.info("Lectura guardada con ÉXITO para %s", esp_id)
-            
-            except Exception as db_err:
-                log.error("CRÍTICO: Fallo al persistir lectura para %s.", esp_id)
-                log.exception("Detalles del ERROR de DB (IntegrityError o NOT NULL, etc.):") 
-            
-            return
+            # ============================================================
+            # 2. PROCESAMIENTO DE JSON
+            # ============================================================
+            data = json.loads(payload_str)
+            esp_id = data.get("esp_id") or esp_id 
 
+            # A. Actualizar Mecanismos (si el payload los trae)
+            has_actuator_data = all(k in data for k in ("riego", "vent", "luz"))
+            if has_actuator_data:
+                log.info("Actualizando mecanismos desde Topic: %s", parts[-1])
+                _update_mecanismos_from_telemetria(db, esp_id, data)
+
+            # Guardar Lectura y Ejecutar Autocontrol (Solo si es /telemetria)
+            if parts[-1] == "telemetria":
+                t = data.get("temp_c")
+                h = data.get("hum_amb")
+                s = data.get("suelo_pct")
+                n = data.get("nivel_pct")
+
+                valid_sensores = (_is_num(t) and _is_num(h) and _is_num(s) and _is_num(n))
+
+                if valid_sensores:
+                    nueva_lectura = _save_lectura(db, esp_id, t, h, s, n)
+                    
+                    if nueva_lectura:
+                        log.info("Lectura guardada. Ejecutando Autocontrol...")
+                        
+                        # --- LLAMADA CRÍTICA AL AUTOCONTROL ---
+                        procesar_umbrales(db, esp_id, nueva_lectura)
+                        # El autocontrol puede generar comandos MQTT (enviar_cmd_mqtt)
+                        # y actualizar el estado de Mecanismos en esta misma sesión.
+                else:
+                    log.info("Skip lectura %s: Datos de sensor inválidos.", esp_id)
+            
+            # Commit final de todas las operaciones (contacto, mecanismos, lectura)
+            db.commit()
+            log.debug("Commit de sesión completado.")
+            
     except json.JSONDecodeError:
-        # El "JSON Inválido" solo saltará si el payload EMPIEZA con { pero es corrupto
         log.error("JSON INVÁLIDO. Topic: %s, Payload: %s", msg.topic, payload_str[:200])
+    except SQLAlchemyError:
+        # En caso de error de DB, hacemos rollback y logueamos
+        if 'db' in locals() and db.is_active:
+             db.rollback()
+        log.error("FALLO CRÍTICO DE DB. Se realizó ROLLBACK.")
+        log.exception("Detalles del error:")
     except Exception as e:
         log.exception("ERROR inesperado en on_message: %s", e)
 
