@@ -8,7 +8,6 @@ import logging
 import json
 
 from app.servicios.mqtt_funciones import enviar_cmd_mqtt  # Se usa para enviar comandos
-from app.db.session import SessionLocal
 from app.db.models import Device, Lectura, Mecanismos, Config
 from app.servicios.devices import get_or_create_device, get_device_by_esp_id
 
@@ -91,27 +90,27 @@ def set_mecanismo(db: Session, esp_id: str, bomba=None, luz=None, ventilador=Non
 # LECTURAS (por device)
 # ============================================================
 
-def agregar_lectura(esp_id: str, temperatura: float, humedad: float, humedad_suelo: float, nivel_de_agua: float) -> Lectura:
-    """Agrega una lectura en la base de datos para un device dado."""
-    db = SessionLocal()
-    try:
-        d = get_or_create_device(db, esp_id)
-        obj = Lectura(
-            device_id=d.id,
-            temperatura=temperatura,
-            humedad=humedad,
-            humedad_suelo=humedad_suelo,
-            nivel_de_agua=nivel_de_agua,
-        )
-        db.add(obj)
-        db.commit()
-        db.refresh(obj)
-        return obj
-    except Exception as e:
-        db.rollback()
-        raise e
-    finally:
-        db.close()
+def agregar_lectura(
+    db: Session,
+    esp_id: str,
+    temperatura: float,
+    humedad: float,
+    humedad_suelo: float,
+    nivel_de_agua: float
+) -> Lectura:
+    """Agrega una lectura en la base de datos para un device dado (usa la sesión inyectada)."""
+    d = get_or_create_device(db, esp_id)
+    obj = Lectura(
+        device_id=d.id,
+        temperatura=temperatura,
+        humedad=humedad,
+        humedad_suelo=humedad_suelo,
+        nivel_de_agua=nivel_de_agua,
+    )
+    db.add(obj)
+    db.commit()
+    db.refresh(obj)
+    return obj
 
 
 def ultima_lectura(db: Session, esp_id: str) -> Optional[Lectura]:
@@ -242,3 +241,62 @@ def get_plant_conditions(plant_name: str) -> dict:
     except Exception as e:
         logging.error(f"Error en la llamada a Gemini para '{plant_name}': {e}")
         raise ConnectionError(f"Ocurrió un error al contactar el servicio de IA: {e}")
+
+
+
+
+
+
+
+sesión 
+
+from sqlalchemy import create_engine, event
+from sqlalchemy.orm import sessionmaker
+import sqlite3
+from pathlib import Path
+from app.core.config import config
+
+# CAMBIO: Base absoluta del repo
+BASE_DIR = Path(__file__).resolve().parents[2]
+
+# CAMBIO: DB unificada en carpeta data/
+DB_PATH = (BASE_DIR / "data" / "app.db").resolve()
+
+# CAMBIO: Normalizamos URL relativa si viniera como sqlite:///./loque sea
+def _normalize_sqlite_url(url: str) -> str:
+    """
+    CAMBIO: Si viene una URL relativa tipo sqlite:///./app.db, la convertimos a absoluta
+    dentro del repo para evitar dobles bases por CWD distinto.
+    """
+    if url.startswith("sqlite:///./"):
+        rel = url.replace("sqlite:///./", "")
+        return f"sqlite:///{(BASE_DIR / rel).resolve()}"
+    return url
+
+# CAMBIO: Usa la de config si existe; si es relativa, la normaliza; si no, usa data/app.db
+SQLALCHEMY_DATABASE_URL = _normalize_sqlite_url(
+    getattr(config, "database_url", f"sqlite:///{DB_PATH}")
+)
+
+engine = create_engine(
+    SQLALCHEMY_DATABASE_URL,
+    echo=False,
+    connect_args={
+        "check_same_thread": False,
+        "timeout": 30,
+    },
+    pool_pre_ping=True,
+)
+
+@event.listens_for(engine, "connect")
+def set_sqlite_pragma(dbapi_connection, connection_record):
+    if isinstance(dbapi_connection, sqlite3.Connection):
+        dbapi_connection.execute("PRAGMA journal_mode=WAL")
+        dbapi_connection.execute("PRAGMA synchronous=NORMAL")
+
+SessionLocal = sessionmaker(
+    autocommit=False,
+    autoflush=False,
+    bind=engine,
+    expire_on_commit=False,
+)
